@@ -19,13 +19,12 @@ let gameState = {
     ]
 };
 
-// 初始化遊戲
+// 頁面加載初始化
 window.onload = function() {
-    loadGame(); // 嘗試讀取本地存檔
+    loadGame();
     
-    // 如果存檔裡沒有角色，自動建立初始主人公
+    // 如果沒有冒險者，強制建立初始主人公與同伴
     if (!gameState.heroes || gameState.heroes.length === 0) {
-        gameState.heroes = [];
         initDefaultHeroes();
         saveGame();
     }
@@ -35,11 +34,16 @@ window.onload = function() {
     startAutoSave();
 };
 
-// 創立冒險者 (標準化數據結構)
-function createHero(name, stats) {
+// 創立角色 (含性別與世代繁衍資料結構)
+function createHero(name, gender, stats, gen = 1) {
     let hero = {
         id: "hero_" + Date.now() + "_" + Math.floor(Math.random()*10000),
         name: name,
+        gender: gender, // 'male' 或 'female'
+        generation: gen, // 第幾代冒險者
+        fatherId: null,
+        motherId: null,
+        spouseId: null, // 配偶 ID (為結婚系統預留)
         level: 1,
         exp: 0,
         maxExp: 100,
@@ -59,15 +63,17 @@ function createHero(name, stats) {
     return hero;
 }
 
-// 預設主人公與初始同伴
+// 創立預設男女主人公
 function initDefaultHeroes() {
-    // 主角：亞瑟 (全能力平衡)
-    gameState.heroes.push(createHero("亞瑟 (主人公)", { str: 12, con: 12, mnd: 10, dex: 10, agi: 10, luk: 10 }));
-    // 同伴：莉莉絲
-    gameState.heroes.push(createHero("莉莉絲", { str: 8, con: 8, mnd: 14, dex: 10, agi: 10, luk: 10 }));
+    gameState.heroes = [];
+    // 主角 亞瑟 (男 ♂)
+    gameState.heroes.push(createHero("亞瑟 (主人公)", "male", { str: 12, con: 12, mnd: 10, dex: 10, agi: 10, luk: 10 }));
+    // 同伴 莉莉絲 (女 ♀)
+    gameState.heroes.push(createHero("莉莉絲", "female", { str: 8, con: 8, mnd: 14, dex: 10, agi: 10, luk: 10 }));
+    log("✨ 公會成功招募初始冒險者：亞瑟 ♂ 與 莉莉絲 ♀！");
 }
 
-// 屬性計算與衍生數值
+// 計算角色完整屬性
 function getHeroStats(hero) {
     let s = { ...hero.baseStats };
     let maxHp = s.con * 12 + s.str * 3 + hero.level * 10;
@@ -81,7 +87,7 @@ function getHeroStats(hero) {
     return { maxHp, maxMp, hpRegen, atk, matk, def, spd, ...s };
 }
 
-// ==================== 本地存檔系統 ====================
+// ==================== 存檔與重置機制 ====================
 function saveGame() {
     try {
         localStorage.setItem('guild_and_dungeon_save', JSON.stringify(gameState));
@@ -95,17 +101,19 @@ function saveGame() {
 function manualSaveGame() {
     if (saveGame()) {
         log("💾 遊戲進度已手動儲存！");
-        alert("遊戲已成功手動存檔！");
-    } else {
-        alert("存檔失敗。");
+        alert("存檔成功！");
     }
 }
 
-// 清除壞存檔按鈕（除錯用）
 function resetSaveData() {
-    if (confirm("確定要重置所有遊戲資料並重新開始嗎？")) {
+    if (confirm("確定要重置所有資料並重新開始嗎？這會清除舊有存檔並重置初始主角！")) {
         localStorage.removeItem('guild_and_dungeon_save');
-        location.reload();
+        gameState.gold = 200;
+        gameState.gems = 10;
+        initDefaultHeroes();
+        saveGame();
+        renderAll();
+        alert("存檔已成功重置！已為您創建初始主人公團隊。");
     }
 }
 
@@ -116,7 +124,7 @@ function loadGame() {
             let parsed = JSON.parse(savedData);
             if (parsed.heroes && parsed.heroes.length > 0) {
                 gameState = { ...gameState, ...parsed };
-                log("📂 已成功載入遊戲進度！");
+                log("📂 已成功載入存檔！");
             }
         }
     } catch (e) {
@@ -125,9 +133,7 @@ function loadGame() {
 }
 
 function startAutoSave() {
-    setInterval(() => {
-        saveGame();
-    }, 30000);
+    setInterval(() => saveGame(), 30000);
 }
 // =======================================================
 
@@ -138,14 +144,12 @@ function switchTab(tabId) {
     
     let targetTab = document.getElementById('tab-' + tabId);
     if (targetTab) targetTab.classList.add('active');
+    if (event && event.target) event.target.classList.add('active');
     
-    if (event && event.target) {
-        event.target.classList.add('active');
-    }
     renderAll();
 }
 
-// 主渲染函式
+// 渲染所有介面
 function renderAll() {
     if (document.getElementById('res-gold')) document.getElementById('res-gold').innerText = gameState.gold;
     if (document.getElementById('res-gems')) document.getElementById('res-gems').innerText = gameState.gems;
@@ -161,10 +165,9 @@ function renderAll() {
     renderBestiary();
 }
 
-// 討伐下拉選單
 function renderDungeonSelect() {
     let select = document.getElementById('dungeon-select');
-    if (!select) return;
+    if (!select || typeof DUNGEONS === 'undefined') return;
     select.innerHTML = "";
     DUNGEONS.forEach(d => {
         let opt = document.createElement('option');
@@ -185,7 +188,7 @@ function changeDungeon(id) {
     renderAll();
 }
 
-// 隊伍視圖渲染
+// 討伐隊伍顯示 (含性別標籤)
 function renderPartyView() {
     let container = document.getElementById('player-party-list');
     if (!container) return;
@@ -198,11 +201,13 @@ function renderPartyView() {
 
     gameState.heroes.forEach(h => {
         let st = getHeroStats(h);
+        let genderIcon = h.gender === 'female' ? '<span style="color:#ff7675;">♀</span>' : '<span style="color:#74b9ff;">♂</span>';
         let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
+        
         container.innerHTML += `
             <div class="entity-card">
                 <div style="display:flex; justify-content:space-between;">
-                    <strong>${h.name}</strong> 
+                    <strong>${h.name} ${genderIcon}</strong> 
                     <span style="font-size:12px; color:var(--accent);">${jobName} Lv.${h.level}</span>
                 </div>
                 <div style="font-size:12px; margin-top:2px;">
@@ -275,7 +280,7 @@ function triggerBossFight() {
     renderAll();
 }
 
-// 自動戰鬥與自然恢復主迴圈
+// 自動戰鬥迴圈
 function startBattleLoop() {
     setInterval(() => {
         if (gameState.isPaused) return;
@@ -392,42 +397,57 @@ function retreat() {
     renderAll();
 }
 
+// 招募新冒險者 (隨機性別與名字)
 function recruitHero() {
     if (gameState.gold >= 100) {
         gameState.gold -= 100;
-        let names = ["洛克", "卡爾", "艾莉亞", "席娜", "格雷", "克里斯", "海倫娜", "艾倫"];
-        let randomName = names[Math.floor(Math.random() * names.length)];
         
-        let newHero = createHero(randomName, { 
-            str: 8 + Math.floor(Math.random()*5), 
-            con: 8 + Math.floor(Math.random()*5), 
-            mnd: 8 + Math.floor(Math.random()*5), 
-            dex: 8 + Math.floor(Math.random()*5), 
-            agi: 8 + Math.floor(Math.random()*5), 
-            luk: 8 + Math.floor(Math.random()*5) 
+        let gender = Math.random() > 0.5 ? 'male' : 'female';
+        let nameList = (typeof HERO_NAMES !== 'undefined') ? HERO_NAMES[gender] : ["冒險者"];
+        let randomName = nameList[Math.floor(Math.random() * nameList.length)];
+        
+        let newHero = createHero(randomName, gender, { 
+            str: 8 + Math.floor(Math.random()*6), 
+            con: 8 + Math.floor(Math.random()*6), 
+            mnd: 8 + Math.floor(Math.random()*6), 
+            dex: 8 + Math.floor(Math.random()*6), 
+            agi: 8 + Math.floor(Math.random()*6), 
+            luk: 8 + Math.floor(Math.random()*6) 
         });
         
         gameState.heroes.push(newHero);
-        log(`🍻 成功招募了新冒險者 ${randomName}！`);
+        log(`🍻 成功招募了新冒險者：${randomName} (${gender === 'male' ? '男 ♂' : '女 ♀'})！`);
         
         renderAll();
         saveGame();
     } else {
-        alert("金幣不足 100！");
+        alert("金幣不足 100！先讓主人公討伐哥布林賺取金幣吧！");
     }
 }
 
+// 冒險者列表渲染 (顯示性別標籤)
 function renderHeroList() {
     let container = document.getElementById('hero-list');
     if (!container) return;
     container.innerHTML = "";
+    
+    if (!gameState.heroes || gameState.heroes.length === 0) {
+        container.innerHTML = "<p style='color:#aaa;'>目前公會暫無冒險者，請點擊【重置存檔】或【招募新冒險者】。</p>";
+        return;
+    }
+
     gameState.heroes.forEach(h => {
         let st = getHeroStats(h);
+        let genderIcon = h.gender === 'female' ? '<span style="color:#ff7675; font-weight:bold;">♀ 女</span>' : '<span style="color:#74b9ff; font-weight:bold;">♂ 男</span>';
         let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
+        
         container.innerHTML += `
             <div class="card">
-                <h4>${h.name}</h4>
-                <p style="font-size:12px; color:var(--accent);">${jobName} (Lv.${h.level})</p>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4>${h.name}</h4>
+                    <span style="font-size:13px;">${genderIcon}</span>
+                </div>
+                <p style="font-size:12px; color:var(--accent);">${jobName} (Lv.${h.level}) - 第 ${h.generation || 1} 代</p>
                 <p style="font-size:12px;">STR: ${st.str} | CON: ${st.con} | MND: ${st.mnd}</p>
                 <p style="font-size:12px;">DEX: ${st.dex} | AGI: ${st.agi} | LUK: ${st.luk}</p>
                 <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="openHeroModal('${h.id}')">查看詳情 / 轉職</button>
@@ -452,7 +472,7 @@ function openHeroModal(heroId) {
                 if (st[rKey] < j.req[rKey]) canReq = false;
             });
             jobOptionsHtml += `
-                <div style="display:flex; justify-between; align-items:center; margin-bottom:5px; background:#161720; padding:6px; border-radius:4px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; background:#161720; padding:6px; border-radius:4px;">
                     <span style="font-size:13px;">${j.name} ${j.isMastery ? '🌟[三階專精]' : ''}</span>
                     <button class="btn ${canReq ? 'btn-success' : 'btn-danger'}" ${!canReq ? 'disabled' : ''} style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">
                         ${h.job === j.id ? '當前職業' : (canReq ? '轉職' : '未達門檻')}
@@ -462,10 +482,12 @@ function openHeroModal(heroId) {
         });
     }
 
+    let genderStr = h.gender === 'female' ? '女 ♀' : '男 ♂';
     let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
+    
     body.innerHTML = `
-        <h3>${h.name} 詳情面板</h3>
-        <p style="color:var(--accent);">當前職業: ${jobName} (可用點數: ${h.freePoints})</p>
+        <h3>${h.name} (${genderStr}) 詳情面板</h3>
+        <p style="color:var(--accent);">當前職業: ${jobName} (可用屬性點: ${h.freePoints})</p>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px;">
             <div>力量 (STR): ${h.baseStats.str} <button onclick="addStat('${h.id}', 'str')">+</button></div>
             <div>體質 (CON): ${h.baseStats.con} <button onclick="addStat('${h.id}', 'con')">+</button></div>
