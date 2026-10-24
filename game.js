@@ -33,7 +33,6 @@ window.onload = function() {
     startBattleLoop();
 };
 
-// 隨機資質評分 (E ~ SSS)
 function getRandomGrade() {
     let rand = Math.random();
     if (rand < 0.05) return "SSS";
@@ -45,7 +44,6 @@ function getRandomGrade() {
     return "D";
 }
 
-// 創立角色
 function createHero(name, gender, row = 'front', gen = 1) {
     let traitsPool = (typeof TRAITS !== 'undefined') ? [...TRAITS] : [];
     let heroTraits = [];
@@ -106,7 +104,6 @@ function initDefaultHeroes() {
     ];
 }
 
-// 計算角色屬性
 function getHeroStats(hero) {
     let s = { ...hero.baseStats };
     let m = hero.jobModifiers || {};
@@ -149,7 +146,6 @@ function getHeroStats(hero) {
     return { maxHp, maxMp, hpRegen, atk, matk, def, spd, ...s };
 }
 
-// 存檔系統
 function saveGame() {
     try {
         localStorage.setItem('guild_and_dungeon_save', JSON.stringify(gameState));
@@ -169,6 +165,8 @@ function resetSaveData() {
         localStorage.removeItem('guild_and_dungeon_save');
         gameState.gold = 300;
         gameState.isExploring = false;
+        gameState.waveCount = 0;
+        gameState.currentEnemies = { front: [], back: [] };
         initDefaultHeroes();
         saveGame();
         renderAll();
@@ -190,32 +188,48 @@ function loadGame() {
     }
 }
 
-function switchTab(tabId) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-    let target = document.getElementById('tab-' + tabId);
-    if (target) target.classList.add('active');
-    if (event && event.target) event.target.classList.add('active');
-    renderAll();
+// 穩定的手機頁籤切換
+function switchTab(tabId, btnElement) {
+    try {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+        let target = document.getElementById('tab-' + tabId);
+        if (target) target.classList.add('active');
+        if (btnElement) btnElement.classList.add('active');
+        renderAll();
+    } catch (e) {
+        console.error("切換頁籤失敗", e);
+    }
+}
+
+function switchModalTab(tab, btnElement) {
+    currentModalTab = tab;
+    document.querySelectorAll('.modal-tab-btn').forEach(b => b.classList.remove('active'));
+    if (btnElement) btnElement.classList.add('active');
+    if (currentModalHeroId) openHeroModal(currentModalHeroId, true);
 }
 
 function renderAll() {
-    if (document.getElementById('res-gold')) document.getElementById('res-gold').innerText = gameState.gold;
-    if (document.getElementById('res-gems')) document.getElementById('res-gems').innerText = gameState.gems;
-    if (document.getElementById('guild-lv')) document.getElementById('guild-lv').innerText = gameState.guildLv;
-    if (document.getElementById('temp-gold')) document.getElementById('temp-gold').innerText = gameState.tempSpoils.gold;
-    
-    let itemSummary = (gameState.tempSpoils.items && gameState.tempSpoils.items.length > 0) ? gameState.tempSpoils.items.join(', ') : "無";
-    if (document.getElementById('temp-loot-items')) document.getElementById('temp-loot-items').innerText = itemSummary;
+    try {
+        if (document.getElementById('res-gold')) document.getElementById('res-gold').innerText = gameState.gold;
+        if (document.getElementById('res-gems')) document.getElementById('res-gems').innerText = gameState.gems;
+        if (document.getElementById('guild-lv')) document.getElementById('guild-lv').innerText = gameState.guildLv;
+        if (document.getElementById('temp-gold')) document.getElementById('temp-gold').innerText = gameState.tempSpoils.gold;
+        
+        let itemSummary = (gameState.tempSpoils.items && gameState.tempSpoils.items.length > 0) ? gameState.tempSpoils.items.join(', ') : "無";
+        if (document.getElementById('temp-loot-items')) document.getElementById('temp-loot-items').innerText = itemSummary;
 
-    renderDungeonSelect();
-    renderPartyView();
-    renderEnemiesView();
-    renderHeroList();
-    renderInventory();
-    renderShop();
-    renderQuests();
-    renderBestiary();
+        renderDungeonSelect();
+        renderPartyView();
+        renderEnemiesView();
+        renderHeroList();
+        renderInventory();
+        renderShop();
+        renderQuests();
+        renderBestiary();
+    } catch (e) {
+        console.error("renderAll 錯誤:", e);
+    }
 }
 
 function renderDungeonSelect() {
@@ -345,10 +359,17 @@ function renderEnemiesView() {
     backContainer.innerHTML = "";
     
     let waveCounter = document.getElementById('wave-counter');
-    if (waveCounter) waveCounter.innerText = `(波次: ${gameState.waveCount}/10)`;
+    if (waveCounter) {
+        waveCounter.innerText = gameState.isExploring ? `(波次: ${gameState.waveCount}/10)` : `(未出發)`;
+    }
 
     if (gameState.isExploring && gameState.currentEnemies.front.length === 0 && gameState.currentEnemies.back.length === 0 && !gameState.bossAvailable) {
         spawnWave();
+    }
+
+    if (!gameState.isExploring) {
+        frontContainer.innerHTML = "<div style='font-size:12px; color:#aaa;'>點擊上方「開始探索」出發</div>";
+        return;
     }
 
     gameState.currentEnemies.front.forEach(e => {
@@ -551,13 +572,6 @@ function recruitHero() {
     }
 }
 
-function switchModalTab(tab) {
-    currentModalTab = tab;
-    document.querySelectorAll('.modal-tab-btn').forEach(b => b.classList.remove('active'));
-    if (event && event.target) event.target.classList.add('active');
-    if (currentModalHeroId) openHeroModal(currentModalHeroId, true);
-}
-
 function openHeroModal(heroId, isRefresh = false) {
     currentModalHeroId = heroId;
     let h = gameState.heroes.find(x => x.id === heroId);
@@ -686,7 +700,7 @@ function renderHeroList() {
     if (!container) return;
     container.innerHTML = "";
     if (!gameState.heroes || gameState.heroes.length === 0) {
-        container.innerHTML = "<p style='color:#aaa;'>目前公會暫無冒險者，請點擊【重置】按鈕恢復初始陣容。</p>";
+        container.innerHTML = "<p style='color:#aaa;'>目前公會暫無冒險者，請點擊【重置】按鈕。</p>";
         return;
     }
     gameState.heroes.forEach(h => {
