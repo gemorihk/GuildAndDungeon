@@ -2,11 +2,11 @@ let gameState = {
     gold: 500,
     gems: 20,
     guildLv: 1,
-    maxTierUnlocked: 1, // 最高解鎖階層，影響商店等級與任務上限
+    maxTierUnlocked: 1,
     heroes: [],
     inventory: [
-        { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, count: 10, desc: "恢復 80 點生命值" },
-        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, count: 1, desc: "基礎戰士長劍" }
+        { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, count: 10, desc: "恢復 80 點生命值" },
+        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, count: 1, desc: "基礎戰士長劍" }
     ],
     bestiary: {},
     activeDungeonId: "goblin_cave",
@@ -17,7 +17,7 @@ let gameState = {
     inBossFight: false,
     currentEnemies: { front: [], back: [] },
     tempSpoils: { gold: 0, items: [], exp: 0 },
-    activeQuests: [] // 玩家手動接取的任務
+    activeQuests: []
 };
 
 let currentModalHeroId = null;
@@ -68,7 +68,10 @@ function createHero(name, gender, row = 'front', gen = 1) {
         row: row,
         generation: gen,
         level: 1, exp: 0, maxExp: 100,
-        job: "novice", jobLevel: 1, jobExp: 0, maxJobExp: 50,
+        job: "novice",
+        jobLevels: { novice: 1 }, // 獨立記錄各職業等級
+        jobExps: { novice: 0 },
+        jobMaxExps: { novice: 50 },
         isDead: false,
         traits: heroTraits,
         growthGrades: {
@@ -86,7 +89,8 @@ function createHero(name, gender, row = 'front', gen = 1) {
         equippedSkills: ["tackle"],
         skillCooldowns: {},
         equippedItems: { weapon: null, armor: null, accessory: null },
-        hp: 120, mp: 40
+        hp: 120, mp: 40,
+        ct: 0 // ATB 行動條充能值
     };
     let st = getHeroStats(hero);
     hero.hp = st.maxHp;
@@ -140,17 +144,27 @@ function getHeroStats(hero) {
     return { maxHp, maxMp, hpRegen, atk, matk, def, spd, ...s };
 }
 
+// 解鎖新技能並自動裝備 (若有空格)
 function checkSkillUnlocks(hero) {
     let jobData = JOBS[hero.job];
     if (!jobData || !jobData.unlockSkills) return;
+    let curJobLv = (hero.jobLevels && hero.jobLevels[hero.job]) ? hero.jobLevels[hero.job] : 1;
 
     Object.keys(jobData.unlockSkills).forEach(reqLv => {
-        if (hero.jobLevel >= parseInt(reqLv)) {
+        if (curJobLv >= parseInt(reqLv)) {
             let skId = jobData.unlockSkills[reqLv];
             if (!hero.learnedSkills.includes(skId)) {
                 hero.learnedSkills.push(skId);
                 hero.skillProficiency[skId] = 0;
-                log(`✨ [${hero.name}] 職業等級達 Lv.${reqLv}，學會新技能【${SKILLS[skId].name}】！`);
+
+                // 新技能自動裝備機制
+                if (!hero.equippedSkills) hero.equippedSkills = [];
+                if (hero.equippedSkills.length < 3 && !hero.equippedSkills.includes(skId)) {
+                    hero.equippedSkills.push(skId);
+                    log(`✨ [${hero.name}] 學會【${SKILLS[skId].name}】並已自動裝備！`);
+                } else {
+                    log(`✨ [${hero.name}] 學會新技能【${SKILLS[skId].name}】！`);
+                }
             }
         }
     });
@@ -170,19 +184,25 @@ function manualSaveGame() {
     if (saveGame()) alert("遊戲進度已手動儲存！");
 }
 
+// 重置按鈕徹底清空
 function resetSaveData() {
     if (confirm("確定要重置所有資料並重新開始嗎？")) {
         localStorage.removeItem('guild_and_dungeon_save');
-        gameState.gold = 500;
-        gameState.maxTierUnlocked = 1;
-        gameState.isExploring = false;
-        gameState.waveCount = 0;
-        gameState.activeQuests = [];
-        gameState.currentEnemies = { front: [], back: [] };
+        gameState = {
+            gold: 500, gems: 20, guildLv: 1, maxTierUnlocked: 1,
+            heroes: [],
+            inventory: [
+                { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, count: 10, desc: "恢復 80 點生命值" },
+                { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, count: 1, desc: "基礎戰士長劍" }
+            ],
+            bestiary: {}, activeDungeonId: "goblin_cave", waveCount: 0,
+            isExploring: false, isPaused: false, bossAvailable: false, inBossFight: false,
+            currentEnemies: { front: [], back: [] }, tempSpoils: { gold: 0, items: [], exp: 0 }, activeQuests: []
+        };
         initDefaultHeroes();
         saveGame();
         renderAll();
-        alert("存檔已成功重置！");
+        alert("存檔與背包已成功完全重置！");
     }
 }
 
@@ -357,6 +377,7 @@ function retreatAndSettle() {
 
     if (gameState.heroes) {
         gameState.heroes.forEach(h => {
+            h.ct = 0;
             if (!h.isDead) {
                 let st = getHeroStats(h);
                 h.hp = st.maxHp;
@@ -373,6 +394,7 @@ function retreatAndSettle() {
     renderAll();
 }
 
+// 顯示我方陣型（含 ATB 行動條）
 function renderPartyView() {
     let frontContainer = document.getElementById('party-front-list');
     let backContainer = document.getElementById('party-back-list');
@@ -389,16 +411,20 @@ function renderPartyView() {
         let st = getHeroStats(h);
         let genderIcon = h.gender === 'female' ? '<span style="color:#ff7675;">♀</span>' : '<span style="color:#74b9ff;">♂</span>';
         let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
+        let curJobLv = (h.jobLevels && h.jobLevels[h.job]) ? h.jobLevels[h.job] : 1;
         let statusBadge = h.isDead ? '<span style="color:var(--danger); font-weight:bold;">[💀 死亡]</span>' : `HP: ${Math.max(0, Math.floor(h.hp))}/${st.maxHp}`;
-        
+        let ctPercent = Math.min(100, Math.floor((h.ct || 0) / 100 * 100));
+
         let html = `
             <div class="entity-card" style="${h.isDead ? 'opacity:0.5; border-left-color:gray;' : ''}">
                 <div style="display:flex; justify-content:space-between;">
-                    <strong>${h.name} ${genderIcon}</strong> 
-                    <span style="font-size:11px; color:var(--accent);">${jobName} Lv.${h.level}</span>
+                    <strong>${h.name} (Lv.${h.level}) ${genderIcon}</strong> 
+                    <span style="font-size:11px; color:var(--accent);">${jobName} (職 Lv.${curJobLv})</span>
                 </div>
                 <div style="font-size:11px; margin-top:2px;">${statusBadge}</div>
                 <div class="bar-container"><div class="hp-bar" style="width:${h.isDead ? 0 : Math.min(100, Math.max(0, (h.hp/st.maxHp)*100))}%;"></div></div>
+                <div style="font-size:10px; color:#aaa; margin-top:2px;">行動讀條 (SPD:${st.spd})</div>
+                <div class="bar-container"><div class="atb-bar" style="width:${h.isDead ? 0 : ctPercent}%;"></div></div>
             </div>
         `;
         if (h.row === 'back') backContainer.innerHTML += html;
@@ -406,6 +432,7 @@ function renderPartyView() {
     });
 }
 
+// 顯示敵方陣型（含 ATB 行動條）
 function renderEnemiesView() {
     let frontContainer = document.getElementById('enemy-front-list');
     let backContainer = document.getElementById('enemy-back-list');
@@ -429,6 +456,7 @@ function renderEnemiesView() {
     }
 
     gameState.currentEnemies.front.forEach(e => {
+        let ctPercent = Math.min(100, Math.floor((e.ct || 0) / 100 * 100));
         frontContainer.innerHTML += `
             <div class="entity-card" style="border-left-color: var(--danger);">
                 <div style="display:flex; justify-content:space-between;">
@@ -436,11 +464,13 @@ function renderEnemiesView() {
                     <span style="font-size:11px; color:#ff6b6b;">HP: ${Math.max(0, Math.floor(e.hp))}/${e.maxHp}</span>
                 </div>
                 <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, Math.max(0, (e.hp/e.maxHp)*100))}%; background:var(--danger);"></div></div>
+                <div class="bar-container" style="margin-top:3px;"><div class="atb-bar" style="width:${ctPercent}%; background:#e67e22;"></div></div>
             </div>
         `;
     });
 
     gameState.currentEnemies.back.forEach(e => {
+        let ctPercent = Math.min(100, Math.floor((e.ct || 0) / 100 * 100));
         backContainer.innerHTML += `
             <div class="entity-card" style="border-left-color: #e67e22;">
                 <div style="display:flex; justify-content:space-between;">
@@ -448,6 +478,7 @@ function renderEnemiesView() {
                     <span style="font-size:11px; color:#ff6b6b;">HP: ${Math.max(0, Math.floor(e.hp))}/${e.maxHp}</span>
                 </div>
                 <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, Math.max(0, (e.hp/e.maxHp)*100))}%; background:var(--danger);"></div></div>
+                <div class="bar-container" style="margin-top:3px;"><div class="atb-bar" style="width:${ctPercent}%; background:#e67e22;"></div></div>
             </div>
         `;
     });
@@ -466,8 +497,8 @@ function spawnWave() {
     let backMob = dung.mobs[Math.floor(Math.random() * dung.mobs.length)];
 
     gameState.currentEnemies = {
-        front: [{ ...frontMob, maxHp: frontMob.hp, mobId: frontMob.id }],
-        back: [{ ...backMob, maxHp: backMob.hp, mobId: backMob.id }]
+        front: [{ ...frontMob, maxHp: frontMob.hp, mobId: frontMob.id, ct: 0, spd: frontMob.spd || 15 }],
+        back: [{ ...backMob, maxHp: backMob.hp, mobId: backMob.id, ct: 0, spd: backMob.spd || 12 }]
     };
     if (!gameState.bestiary[frontMob.id]) gameState.bestiary[frontMob.id] = { ...frontMob, kills: 0 };
     if (!gameState.bestiary[backMob.id]) gameState.bestiary[backMob.id] = { ...backMob, kills: 0 };
@@ -480,13 +511,14 @@ function triggerBossFight() {
     gameState.inBossFight = true;
     gameState.bossAvailable = false;
     gameState.currentEnemies = {
-        front: [{ ...dung.boss, maxHp: dung.boss.hp, mobId: dung.boss.id }],
+        front: [{ ...dung.boss, maxHp: dung.boss.hp, mobId: dung.boss.id, ct: 0, spd: dung.boss.spd || 20 }],
         back: []
     };
     log(`🔥 首領 ${dung.boss.name} 降臨！`);
     renderAll();
 }
 
+// ⚡ 全新 ATB (Action Time Bar) 敏捷拉條戰鬥主迴圈
 function startBattleLoop() {
     setInterval(() => {
         if (!gameState.isExploring || gameState.isPaused) return;
@@ -494,146 +526,173 @@ function startBattleLoop() {
         let threshold = parseInt(document.getElementById('auto-potion-threshold').value) || 40;
         let potionType = document.getElementById('auto-potion-type').value;
 
+        // 1. 自動喝藥與自然回復
         if (gameState.heroes) {
             gameState.heroes.forEach(h => {
                 if (!h.isDead && (h.row === 'front' || h.row === 'back')) {
                     let st = getHeroStats(h);
                     if (h.hp > 0 && h.hp < st.maxHp) h.hp = Math.min(st.maxHp, h.hp + st.hpRegen);
                     if (h.hp > 0 && (h.hp / st.maxHp * 100) < threshold) usePotion(h, potionType);
-
-                    if (h.skillCooldowns) {
-                        Object.keys(h.skillCooldowns).forEach(sk => {
-                            if (h.skillCooldowns[sk] > 0) h.skillCooldowns[sk]--;
-                        });
-                    }
                 }
             });
         }
 
         let frontEnemies = gameState.currentEnemies.front;
         let backEnemies = gameState.currentEnemies.back;
+        let allEnemies = [...frontEnemies, ...backEnemies].filter(e => e.hp > 0);
+        let activeHeroes = gameState.heroes.filter(h => (h.row === 'front' || h.row === 'back') && h.hp > 0 && !h.isDead);
 
-        if (frontEnemies.length > 0 || backEnemies.length > 0) {
-            let livingFront = gameState.heroes.filter(h => h.row === 'front' && h.hp > 0 && !h.isDead);
-            let livingBack = gameState.heroes.filter(h => h.row === 'back' && h.hp > 0 && !h.isDead);
-            let activeHero = livingFront.length > 0 ? livingFront[Math.floor(Math.random() * livingFront.length)] : (livingBack.length > 0 ? livingBack[0] : null);
+        if (allEnemies.length === 0 || activeHeroes.length === 0) {
+            renderPartyView();
+            renderEnemiesView();
+            return;
+        }
 
-            let activeEnemy = frontEnemies.length > 0 ? frontEnemies[0] : backEnemies[0];
+        // 2. 敏捷充能累加 (ATB Tick)
+        activeHeroes.forEach(h => {
+            let st = getHeroStats(h);
+            h.ct = (h.ct || 0) + Math.max(3, Math.floor(st.spd * 0.8));
+        });
 
-            if (activeHero && activeEnemy) {
-                let heroSt = getHeroStats(activeHero);
-                let targetEnemy = frontEnemies.length > 0 ? frontEnemies[0] : backEnemies[0];
+        allEnemies.forEach(e => {
+            e.ct = (e.ct || 0) + Math.max(3, Math.floor((e.spd || 15) * 0.8));
+        });
 
-                let usedSkill = null;
-                if (activeHero.equippedSkills && activeHero.equippedSkills.length > 0 && typeof SKILLS !== 'undefined') {
-                    for (let skId of activeHero.equippedSkills) {
-                        let sk = SKILLS[skId];
-                        if (sk && (!activeHero.skillCooldowns || !activeHero.skillCooldowns[skId] || activeHero.skillCooldowns[skId] === 0)) {
-                            usedSkill = sk;
-                            if (!activeHero.skillCooldowns) activeHero.skillCooldowns = {};
-                            activeHero.skillCooldowns[skId] = sk.cd;
-                            
-                            if (!activeHero.skillProficiency) activeHero.skillProficiency = {};
-                            activeHero.skillProficiency[skId] = (activeHero.skillProficiency[skId] || 0) + 1;
-                            break;
-                        }
-                    }
-                }
+        // 3. 找出目前 CT ≥ 100 中敏捷最高、最先觸發行動的角色/怪物
+        let readyHero = activeHeroes.filter(h => h.ct >= 100).sort((a, b) => b.ct - a.ct)[0];
+        let readyEnemy = allEnemies.filter(e => e.ct >= 100).sort((a, b) => b.ct - a.ct)[0];
 
-                let dmgToEnemy = 0;
-                if (usedSkill && usedSkill.type === 'attack') {
-                    dmgToEnemy = Math.max(3, Math.floor(heroSt.atk * usedSkill.power - targetEnemy.def * 0.4));
-                    log(`✨ [${activeHero.name}] 使用 [${usedSkill.name}] 造成 ${dmgToEnemy} 傷害！`);
-                } else if (usedSkill && usedSkill.type === 'heal') {
-                    let healAmt = Math.floor(heroSt.matk * usedSkill.power);
-                    activeHero.hp = Math.min(heroSt.maxHp, activeHero.hp + healAmt);
-                    log(`💖 [${activeHero.name}] 使用 [${usedSkill.name}] 恢復 ${healAmt} 生命！`);
-                } else {
-                    dmgToEnemy = Math.max(2, Math.floor(heroSt.atk - targetEnemy.def * 0.5));
-                    log(`⚔️ [${activeHero.name}] 攻擊 [${targetEnemy.name}] 造成 ${dmgToEnemy} 傷害`);
-                }
+        // 英雄優先行動或依 CT 值決定
+        if (readyHero && (!readyEnemy || readyHero.ct >= readyEnemy.ct)) {
+            // 🌟 英雄行動
+            readyHero.ct -= 100; // 消耗行動點數
 
-                targetEnemy.hp -= dmgToEnemy;
+            let heroSt = getHeroStats(readyHero);
+            let targetEnemy = frontEnemies.length > 0 ? frontEnemies[0] : backEnemies[0];
 
-                if (targetEnemy.hp <= 0) {
-                    log(`☠️ 擊敗 [${targetEnemy.name}]！獲得 ${targetEnemy.gold} 金幣`);
-                    
-                    gameState.tempSpoils.gold += targetEnemy.gold;
-                    
-                    // 累計手動接取任務數
-                    gameState.activeQuests.forEach(q => {
-                        if (q.targetMob === targetEnemy.mobId && !q.completed) {
-                            q.count++;
-                            if (q.count >= q.maxCount) q.completed = true;
-                        }
-                    });
-
-                    // 參戰全員發放經驗值
-                    let activeParty = gameState.heroes.filter(h => (h.row === 'front' || h.row === 'back') && !h.isDead);
-                    activeParty.forEach(hero => {
-                        if (hero.level < 50) {
-                            hero.exp += targetEnemy.exp;
-                            if (hero.exp >= hero.maxExp) {
-                                hero.level++;
-                                hero.exp -= hero.maxExp;
-                                hero.maxExp = Math.floor(hero.maxExp * 1.4);
-                                log(`🎉 ${hero.name} 升級至 Lv.${hero.level}！`);
-                            }
-                        }
-
-                        if (hero.jobLevel < 10) {
-                            hero.jobExp += Math.floor(targetEnemy.exp / 2);
-                            if (hero.jobExp >= hero.maxJobExp) {
-                                hero.jobLevel++;
-                                hero.jobExp -= hero.maxJobExp;
-                                hero.maxJobExp = Math.floor(hero.maxJobExp * 1.5);
-                                checkSkillUnlocks(hero);
-                                log(`🌟 ${hero.name} 職業等級提升至 Lv.${hero.jobLevel}！`);
-                            }
-                        }
-                    });
-
-                    if (frontEnemies.includes(targetEnemy)) gameState.currentEnemies.front = frontEnemies.filter(e => e !== targetEnemy);
-                    else gameState.currentEnemies.back = backEnemies.filter(e => e !== targetEnemy);
-
-                    if (gameState.currentEnemies.front.length === 0 && gameState.currentEnemies.back.length === 0) {
-                        if (gameState.inBossFight) {
-                            gameState.inBossFight = false;
-                            gameState.waveCount = 0;
-                            log(`🏆 擊殺 Boss 成功！解鎖更高的地下城與商店等級！`);
-                            gameState.tempSpoils.gold += 300;
-                            
-                            // 解鎖更高階層
-                            let dung = DUNGEONS.find(d => d.id === gameState.activeDungeonId);
-                            if (dung && dung.tier >= gameState.maxTierUnlocked) {
-                                gameState.maxTierUnlocked = dung.tier + 1;
-                            }
-                        } else {
-                            gameState.waveCount++;
-                            if (gameState.waveCount >= 10 && !gameState.bossAvailable) {
-                                gameState.bossAvailable = true;
-                                log(`🔔 已達 10 波，可隨時挑戰 Boss 或繼續掛機！`);
-                            }
-                        }
-                    }
-                } else {
-                    let targetHero = livingFront.length > 0 ? livingFront[Math.floor(Math.random() * livingFront.length)] : activeHero;
-                    let targetSt = getHeroStats(targetHero);
-                    let dmgToHero = Math.max(2, Math.floor(activeEnemy.atk - targetSt.def * 0.4));
-                    targetHero.hp -= dmgToHero;
-                    log(`💥 [${activeEnemy.name}] 反擊 [${targetHero.name}] 造成 ${dmgToHero} 傷害`);
-
-                    if (targetHero.hp <= 0) {
-                        targetHero.hp = 0;
-                        targetHero.isDead = true;
-                        log(`💀 [${targetHero.name}] 在戰鬥中陣亡了！必須返回城鎮花費金幣醫治！`);
+            let usedSkill = null;
+            if (readyHero.equippedSkills && readyHero.equippedSkills.length > 0 && typeof SKILLS !== 'undefined') {
+                for (let skId of readyHero.equippedSkills) {
+                    let sk = SKILLS[skId];
+                    if (sk && (!readyHero.skillCooldowns || !readyHero.skillCooldowns[skId] || readyHero.skillCooldowns[skId] === 0)) {
+                        usedSkill = sk;
+                        if (!readyHero.skillCooldowns) readyHero.skillCooldowns = {};
+                        readyHero.skillCooldowns[skId] = sk.cd;
+                        
+                        if (!readyHero.skillProficiency) readyHero.skillProficiency = {};
+                        readyHero.skillProficiency[skId] = (readyHero.skillProficiency[skId] || 0) + 1;
+                        break;
                     }
                 }
             }
+
+            let dmgToEnemy = 0;
+            if (usedSkill && usedSkill.type === 'attack') {
+                dmgToEnemy = Math.max(3, Math.floor(heroSt.atk * usedSkill.power - targetEnemy.def * 0.4));
+                log(`⚡ [${readyHero.name}] 發動敏捷突襲！使用 [${usedSkill.name}] 造成 ${dmgToEnemy} 傷害！`);
+            } else if (usedSkill && usedSkill.type === 'heal') {
+                let healAmt = Math.floor(heroSt.matk * usedSkill.power);
+                readyHero.hp = Math.min(heroSt.maxHp, readyHero.hp + healAmt);
+                log(`💖 [${readyHero.name}] 使用 [${usedSkill.name}] 恢復 ${healAmt} 生命！`);
+            } else {
+                dmgToEnemy = Math.max(2, Math.floor(heroSt.atk - targetEnemy.def * 0.5));
+                log(`⚔️ [${readyHero.name}] 快速擊打 [${targetEnemy.name}] 造成 ${dmgToEnemy} 傷害`);
+            }
+
+            targetEnemy.hp -= dmgToEnemy;
+
+            // 敵方死亡處理與 35% 裝備掉落
+            if (targetEnemy.hp <= 0) {
+                log(`☠️ 擊敗 [${targetEnemy.name}]！獲得 ${targetEnemy.gold} 金幣`);
+                gameState.tempSpoils.gold += targetEnemy.gold;
+
+                // 🌟 35% 高機率掉落裝備機制
+                if (Math.random() < 0.35 && typeof EQUIPMENT_TEMPLATES !== 'undefined') {
+                    let randEquip = EQUIPMENT_TEMPLATES[Math.floor(Math.random() * EQUIPMENT_TEMPLATES.length)];
+                    gameState.tempSpoils.items.push(randEquip.name);
+                    
+                    let invEquip = gameState.inventory.find(i => i.name === randEquip.name);
+                    if (invEquip) invEquip.count++;
+                    else gameState.inventory.push({ ...randEquip, type: "equipment", category: "equipment", count: 1 });
+                    log(`🎁 掉落裝備：【${randEquip.name}】！`);
+                }
+
+                // 全隊參戰人員平分經驗值
+                activeHeroes.forEach(hero => {
+                    if (hero.level < 50) {
+                        hero.exp += targetEnemy.exp;
+                        if (hero.exp >= hero.maxExp) {
+                            hero.level++;
+                            hero.exp -= hero.maxExp;
+                            hero.maxExp = Math.floor(hero.maxExp * 1.4);
+                            log(`🎉 ${hero.name} 升級至 Lv.${hero.level}！`);
+                        }
+                    }
+
+                    // 記錄當前職業專屬等級
+                    if (!hero.jobLevels) hero.jobLevels = {};
+                    if (!hero.jobExps) hero.jobExps = {};
+                    if (!hero.jobMaxExps) hero.jobMaxExps = {};
+
+                    let curJob = hero.job;
+                    let curJobLv = hero.jobLevels[curJob] || 1;
+                    if (curJobLv < 10) {
+                        hero.jobExps[curJob] = (hero.jobExps[curJob] || 0) + Math.floor(targetEnemy.exp / 2);
+                        let maxJExp = hero.jobMaxExps[curJob] || 50;
+                        if (hero.jobExps[curJob] >= maxJExp) {
+                            hero.jobLevels[curJob] = curJobLv + 1;
+                            hero.jobExps[curJob] -= maxJExp;
+                            hero.jobMaxExps[curJob] = Math.floor(maxJExp * 1.5);
+                            checkSkillUnlocks(hero);
+                            log(`🌟 ${hero.name} 的【${JOBS[curJob].name}】提升至 Lv.${hero.jobLevels[curJob]}！`);
+                        }
+                    }
+                });
+
+                if (frontEnemies.includes(targetEnemy)) gameState.currentEnemies.front = frontEnemies.filter(e => e !== targetEnemy);
+                else gameState.currentEnemies.back = backEnemies.filter(e => e !== targetEnemy);
+
+                if (gameState.currentEnemies.front.length === 0 && gameState.currentEnemies.back.length === 0) {
+                    if (gameState.inBossFight) {
+                        gameState.inBossFight = false;
+                        gameState.waveCount = 0;
+                        log(`🏆 擊殺 Boss 成功！解鎖更高關卡與商店等級！`);
+                        gameState.tempSpoils.gold += 300;
+                        let dung = DUNGEONS.find(d => d.id === gameState.activeDungeonId);
+                        if (dung && dung.tier >= gameState.maxTierUnlocked) gameState.maxTierUnlocked = dung.tier + 1;
+                    } else {
+                        gameState.waveCount++;
+                        if (gameState.waveCount >= 10 && !gameState.bossAvailable) {
+                            gameState.bossAvailable = true;
+                            log(`🔔 已達 10 波，可隨時挑戰 Boss！`);
+                        }
+                    }
+                }
+            }
+        } else if (readyEnemy) {
+            // 😈 怪物行動
+            readyEnemy.ct -= 100;
+
+            let livingFront = activeHeroes.filter(h => h.row === 'front');
+            let targetHero = livingFront.length > 0 ? livingFront[Math.floor(Math.random() * livingFront.length)] : activeHeroes[Math.floor(Math.random() * activeHeroes.length)];
+            
+            if (targetHero) {
+                let targetSt = getHeroStats(targetHero);
+                let dmgToHero = Math.max(2, Math.floor(readyEnemy.atk - targetSt.def * 0.4));
+                targetHero.hp -= dmgToHero;
+                log(`💥 [${readyEnemy.name}] 反擊 [${targetHero.name}] 造成 ${dmgToHero} 傷害`);
+
+                if (targetHero.hp <= 0) {
+                    targetHero.hp = 0;
+                    targetHero.isDead = true;
+                    log(`💀 [${targetHero.name}] 在戰鬥中陣亡了！必須返回城鎮花費金幣醫治！`);
+                }
+            }
         }
+
         renderPartyView();
         renderEnemiesView();
-    }, 1200);
+    }, 200); // 高頻率行動條充能檢測
 }
 
 function usePotion(hero, potionId) {
@@ -688,11 +747,20 @@ function cycleHeroRow(heroId) {
     }
 }
 
-// 開啟職業管理 Modal
+// 開啟雙欄轉職彈窗 (含頂部能力值與獨立職業等級)
 function openJobModal(heroId) {
     currentJobModalHeroId = heroId;
     let h = gameState.heroes.find(x => x.id === heroId);
     if (!h) return;
+
+    let st = getHeroStats(h);
+    let statsHeader = document.getElementById('job-modal-hero-stats');
+    if (statsHeader) {
+        statsHeader.innerHTML = `
+            <strong>${h.name} 當前能力值：</strong><br>
+            STR: ${Math.floor(st.str)} | CON: ${Math.floor(st.con)} | MND: ${Math.floor(st.mnd)} | DEX: ${Math.floor(st.dex)} | AGI: ${Math.floor(st.agi)} | LUK: ${Math.floor(st.luk)}
+        `;
+    }
 
     selectedJobIdForView = h.job;
     renderJobModalContent();
@@ -704,7 +772,6 @@ function openJobModal(heroId) {
 function renderJobModalContent() {
     let h = gameState.heroes.find(x => x.id === currentJobModalHeroId);
     if (!h) return;
-    let st = getHeroStats(h);
 
     let rightPanel = document.getElementById('job-right-list');
     if (!rightPanel) return;
@@ -713,15 +780,16 @@ function renderJobModalContent() {
     Object.keys(JOBS).forEach(jKey => {
         let j = JOBS[jKey];
         let isCurrent = h.job === j.id;
+        let savedJobLv = (h.jobLevels && h.jobLevels[j.id]) ? h.jobLevels[j.id] : 1;
 
         rightPanel.innerHTML += `
             <div style="background:#161720; padding:10px; border-radius:6px; border:1px solid var(--panel-border); display:flex; justify-content:space-between; align-items:center;" onclick="selectJobView('${j.id}')">
                 <div>
-                    <strong>${j.name}</strong>
+                    <strong>${j.name}</strong> <span style="font-size:11px; color:var(--accent);">(已達 Lv.${savedJobLv})</span>
                     <div style="font-size:11px; color:#aaa;">前置要求: ${JSON.stringify(j.req)}</div>
                 </div>
                 <button class="btn ${isCurrent ? 'btn-success' : 'btn-primary'}" style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">
-                    ${isCurrent ? '當前職業' : '轉職'}
+                    ${isCurrent ? '當前職業' : `切換 (Lv.${savedJobLv})`}
                 </button>
             </div>
         `;
@@ -767,9 +835,12 @@ function changeHeroJob(heroId, jobId) {
         }
 
         h.job = jobId;
+        if (!h.jobLevels) h.jobLevels = {};
+        if (!h.jobLevels[jobId]) h.jobLevels[jobId] = 1;
+
         h.jobModifiers = j.modifiers || {};
         checkSkillUnlocks(h);
-        log(`✨ ${h.name} 成功轉職為 ${j.name}！`);
+        log(`✨ ${h.name} 切換職業為 ${j.name} (Lv.${h.jobLevels[jobId]})！`);
         renderJobModalContent();
         renderAll();
         saveGame();
@@ -790,6 +861,10 @@ function openHeroModal(heroId, isRefresh = false) {
     let body = document.getElementById('modal-hero-body');
     if (!body) return;
 
+    let curJobLv = (h.jobLevels && h.jobLevels[h.job]) ? h.jobLevels[h.job] : 1;
+    let curJobExp = (h.jobExps && h.jobExps[h.job]) ? h.jobExps[h.job] : 0;
+    let curJobMaxExp = (h.jobMaxExps && h.jobMaxExps[h.job]) ? h.jobMaxExps[h.job] : 50;
+
     if (currentModalTab === 'stats') {
         let traitsHtml = (h.traits && h.traits.length > 0) ? h.traits.map(t => `<span style="background:#2a2d3d; padding:2px 6px; border-radius:4px; font-size:11px; color:var(--accent); margin-right:5px;" title="${t.desc}">${t.name}</span>`).join('') : "無";
         let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
@@ -798,14 +873,14 @@ function openHeroModal(heroId, isRefresh = false) {
         let rowLabel = h.row === 'front' ? '🛡️ 前衛' : (h.row === 'back' ? '🏹 後衛' : '💤 未上陣');
 
         body.innerHTML = `
-            <h3>${h.name} (${h.gender === 'female' ? '女 ♀' : '男 ♂'}) ${h.isDead ? '<span style="color:var(--danger);">[💀 死亡]</span>' : ''}</h3>
+            <h3>${h.name} (Lv.${h.level}) ${h.gender === 'female' ? '女 ♀' : '男 ♂'} ${h.isDead ? '<span style="color:var(--danger);">[💀 死亡]</span>' : ''}</h3>
             <p style="font-size:12px; color:#aaa;">性格: ${traitsHtml}</p>
             
             <div style="font-size:12px; margin-top:6px;">
                 <div>角色 Lv.${h.level} / 50 (${h.exp} / ${h.maxExp} EXP)</div>
                 <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, (h.exp/h.maxExp)*100)}%; background:#f1c40f;"></div></div>
-                <div style="margin-top:4px;">${jobName} Lv.${h.jobLevel} / 10 (${h.jobExp} / ${h.maxJobExp} EXP)</div>
-                <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, (h.jobExp/h.maxJobExp)*100)}%; background:#9b59b6;"></div></div>
+                <div style="margin-top:4px;">${jobName} (職 Lv.${curJobLv}/10) (${curJobExp} / ${curJobMaxExp} EXP)</div>
+                <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, (curJobExp/curJobMaxExp)*100)}%; background:#9b59b6;"></div></div>
             </div>
 
             ${reviveBtn}
@@ -826,14 +901,16 @@ function openHeroModal(heroId, isRefresh = false) {
             </div>
         `;
     } else {
+        // 技能管理與裝卸
         body.innerHTML = `
             <h3>${h.name} - 技能與熟練度</h3>
             <div style="margin-top:10px;">
-                <h4>已學會技能與熟練度</h4>
+                <h4>已學會技能與裝備 (已裝備: ${h.equippedSkills ? h.equippedSkills.length : 0}/3)</h4>
                 ${h.learnedSkills.map(skId => {
                     let sk = SKILLS[skId];
+                    if (!sk) return '';
                     let prof = h.skillProficiency[skId] || 0;
-                    let isEquipped = h.equippedSkills.includes(skId);
+                    let isEquipped = h.equippedSkills && h.equippedSkills.includes(skId);
                     return `
                         <div style="display:flex; justify-content:space-between; align-items:center; background:#161720; padding:8px; border-radius:4px; margin-bottom:6px;">
                             <div>
@@ -855,13 +932,27 @@ function openHeroModal(heroId, isRefresh = false) {
     if (modal && !isRefresh) modal.style.display = 'flex';
 }
 
+function toggleSkill(heroId, skId) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (!h) return;
+    if (!h.equippedSkills) h.equippedSkills = [];
+    if (h.equippedSkills.includes(skId)) {
+        h.equippedSkills = h.equippedSkills.filter(s => s !== skId);
+    } else {
+        if (h.equippedSkills.length < 3) h.equippedSkills.push(skId);
+        else alert("最多只能裝配 3 個技能！");
+    }
+    openHeroModal(heroId, true);
+    saveGame();
+}
+
 function closeHeroModal() {
     currentModalHeroId = null;
     let modal = document.getElementById('hero-modal');
     if (modal) modal.style.display = 'none';
 }
 
-// 修正：新增管理職業按鈕
+// 角色列表 (含個人等級 Lv.X 與職業等級 職 Lv.X)
 function renderHeroList() {
     let container = document.getElementById('hero-list');
     if (!container) return;
@@ -874,16 +965,17 @@ function renderHeroList() {
         let st = getHeroStats(h);
         let genderIcon = h.gender === 'female' ? '<span style="color:#ff7675;">♀</span>' : '<span style="color:#74b9ff;">♂</span>';
         let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
+        let curJobLv = (h.jobLevels && h.jobLevels[h.job]) ? h.jobLevels[h.job] : 1;
         let deadTag = h.isDead ? '<span style="color:var(--danger); font-weight:bold;">[💀 死亡]</span>' : '';
         let rowLabel = h.row === 'front' ? '前衛' : (h.row === 'back' ? '後衛' : '未上陣');
 
         container.innerHTML += `
             <div class="card" style="${h.isDead ? 'border-color:var(--danger);' : ''}">
-                <h4>${h.name} ${genderIcon} ${deadTag}</h4>
-                <p style="font-size:12px; color:var(--accent);">${jobName} (Lv.${h.level}) | 位置: <strong>${rowLabel}</strong></p>
+                <h4>${h.name} (Lv.${h.level}) ${genderIcon} ${deadTag}</h4>
+                <p style="font-size:12px; color:var(--accent);">${jobName} (職 Lv.${curJobLv}) | 位置: <strong>${rowLabel}</strong></p>
                 <div style="font-size:11px; margin-bottom:4px;">EXP: ${h.exp}/${h.maxExp}</div>
                 <div class="bar-container" style="margin-bottom:8px;"><div class="hp-bar" style="width:${Math.min(100, (h.exp/h.maxExp)*100)}%; background:#f1c40f;"></div></div>
-                <p style="font-size:12px;">STR: ${Math.floor(st.str)} | CON: ${Math.floor(st.con)} | MND: ${Math.floor(st.mnd)}</p>
+                <p style="font-size:12px;">STR: ${Math.floor(st.str)} | CON: ${Math.floor(st.con)} | AGI: ${Math.floor(st.agi)}</p>
                 <div style="display:flex; gap:6px; margin-top:8px;">
                     <button class="btn btn-warning" style="flex:1; font-size:11px;" onclick="cycleHeroRow('${h.id}')">切換位置</button>
                     <button class="btn btn-primary" style="flex:1; font-size:11px;" onclick="openHeroModal('${h.id}')">管理角色</button>
@@ -894,6 +986,7 @@ function renderHeroList() {
     });
 }
 
+// 背包列表 (含低於 1/3 出售功能)
 function renderInventory() {
     let container = document.getElementById('inventory-grid');
     if (!container) return;
@@ -910,16 +1003,43 @@ function renderInventory() {
     }
 
     filteredItems.forEach(item => {
+        let baseCost = item.cost || 30;
+        let sellPrice = Math.floor(baseCost / 3); // 固定低於 1/3 的售價
+
         container.innerHTML += `
-            <div class="card">
-                <strong>${item.name}</strong> x${item.count}
-                <p style="font-size:12px; color:#aaa;">${item.desc || '道具/裝備/素材'}</p>
+            <div class="shop-item-row" style="margin-bottom:8px;">
+                <div class="shop-item-info">
+                    <div class="shop-item-title">${item.name} <span style="font-size:12px; color:var(--accent);">x${item.count}</span></div>
+                    <div class="shop-item-desc">${item.desc || '背包物品'}</div>
+                </div>
+                <div class="shop-item-action">
+                    <span class="shop-item-price">🪙 ${sellPrice} 金幣/個</span>
+                    <button class="btn btn-danger" onclick="sellInvItem('${item.id}')">出售 1 個</button>
+                </div>
             </div>
         `;
     });
 }
 
-// 修正：解鎖商店與列表式介面
+function sellInvItem(id) {
+    let item = gameState.inventory.find(i => i.id === id);
+    if (item && item.count > 0) {
+        let baseCost = item.cost || 30;
+        let sellPrice = Math.floor(baseCost / 3);
+        
+        item.count--;
+        gameState.gold += sellPrice;
+        log(`💰 出售了 1 個【${item.name}】，獲得 ${sellPrice} 金幣`);
+
+        if (item.count <= 0) {
+            gameState.inventory = gameState.inventory.filter(i => i.id !== id);
+        }
+
+        renderAll();
+        saveGame();
+    }
+}
+
 function renderShop() {
     let container = document.getElementById('shop-items-list');
     let tierBadge = document.getElementById('shop-tier-badge');
@@ -981,7 +1101,6 @@ function buyShopItem(id) {
     }
 }
 
-// 修正：任務接取限制與手動回報
 function renderQuests() {
     let container = document.getElementById('quest-list');
     let activeCountEl = document.getElementById('active-quest-count');
@@ -995,10 +1114,9 @@ function renderQuests() {
     container.innerHTML = "";
 
     QUEST_DATABASE.forEach(q => {
-        if (q.tierReq > (gameState.maxTierUnlocked || 1)) return; // 依階層解鎖
+        if (q.tierReq > (gameState.maxTierUnlocked || 1)) return;
 
         let activeQ = gameState.activeQuests.find(x => x.id === q.id);
-        
         let actionBtn = '';
         if (!activeQ) {
             actionBtn = `<button class="btn btn-primary" onclick="acceptQuest('${q.id}')">接取任務</button>`;
@@ -1044,7 +1162,7 @@ function completeQuest(id) {
         let q = gameState.activeQuests[qIdx];
         gameState.gold += q.rewardGold;
         log(`📜 完成任務【${q.title}】！獲得 🪙 ${q.rewardGold} 金幣`);
-        gameState.activeQuests.splice(qIdx, 1); // 移出已完成，允許重複接取
+        gameState.activeQuests.splice(qIdx, 1);
         renderAll();
         saveGame();
     }
