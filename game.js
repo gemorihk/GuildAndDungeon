@@ -1,10 +1,10 @@
 let gameState = {
-    gold: 200,
-    gems: 10,
+    gold: 300,
+    gems: 20,
     guildLv: 1,
     heroes: [],
     inventory: [
-        { id: "pot_small", name: "小型回復藥水", type: "potion", heal: 80, count: 5 }
+        { id: "pot_small", name: "小型回復藥水", type: "potion", heal: 80, count: 10 }
     ],
     bestiary: {},
     activeDungeonId: "goblin_cave",
@@ -16,9 +16,12 @@ let gameState = {
     currentEnemies: { front: [], back: [] },
     tempSpoils: { gold: 0, items: [], exp: 0 },
     quests: [
-        { id: "q1", title: "清掃哥布林", targetMob: "goblin", count: 0, maxCount: 10, rewardGold: 100, completed: false, claimed: false }
+        { id: "q1", title: "清掃哥布林", targetMob: "goblin", count: 0, maxCount: 10, rewardGold: 120, completed: false, claimed: false }
     ]
 };
+
+let currentModalHeroId = null;
+let currentModalTab = 'stats';
 
 window.onload = function() {
     loadGame();
@@ -30,23 +33,64 @@ window.onload = function() {
     startBattleLoop();
 };
 
-function createHero(name, gender, stats, row = 'front', gen = 1) {
+// 隨機抽選資質評分 (E ~ SSS)
+function getRandomGrade() {
+    let rand = Math.random();
+    if (rand < 0.05) return "SSS";
+    if (rand < 0.12) return "SS";
+    if (rand < 0.25) return "S";
+    if (rand < 0.45) return "A";
+    if (rand < 0.70) return "B";
+    if (rand < 0.90) return "C";
+    return "D";
+}
+
+// 創建具有天生資質與性格的角色
+function createHero(name, gender, row = 'front', gen = 1) {
+    let traitsPool = [...TRAITS];
+    let heroTraits = [];
+    let traitCount = 1 + Math.floor(Math.random() * 2); // 1~2個性格
+    for(let i=0; i<traitCount; i++) {
+        if(traitsPool.length > 0) {
+            let idx = Math.floor(Math.random() * traitsPool.length);
+            heroTraits.push(traitsPool.splice(idx, 1)[0]);
+        }
+    }
+
     let hero = {
         id: "hero_" + Date.now() + "_" + Math.floor(Math.random()*100000),
         name: name,
         gender: gender,
-        row: row, // 'front' 或 'back'
+        row: row,
         generation: gen,
         level: 1,
         exp: 0,
         maxExp: 100,
         job: "novice",
         jobLevels: { novice: 1 },
-        baseStats: stats,
-        freePoints: 5,
-        hp: 100,
-        mp: 30,
-        equip: { weapon: null, offhand: null, helmet: null, body: null, shoes: null, necklace: null, ring: null }
+        traits: heroTraits,
+        // 六維天生評分
+        growthGrades: {
+            str: getRandomGrade(),
+            con: getRandomGrade(),
+            mnd: getRandomGrade(),
+            dex: getRandomGrade(),
+            agi: getRandomGrade(),
+            luk: getRandomGrade()
+        },
+        baseStats: {
+            str: 10 + Math.floor(Math.random()*6),
+            con: 10 + Math.floor(Math.random()*6),
+            mnd: 10 + Math.floor(Math.random()*6),
+            dex: 10 + Math.floor(Math.random()*6),
+            agi: 10 + Math.floor(Math.random()*6),
+            luk: 10 + Math.floor(Math.random()*6)
+        },
+        jobModifiers: { str: 0, con: 0, mnd: 0, dex: 0, agi: 0, luk: 0, atk: 0, matk: 0, def: 0 },
+        equippedSkills: ["bash"],
+        skillCooldowns: {},
+        hp: 120,
+        mp: 40
     };
     let st = getHeroStats(hero);
     hero.hp = st.maxHp;
@@ -56,25 +100,54 @@ function createHero(name, gender, stats, row = 'front', gen = 1) {
 
 function initDefaultHeroes() {
     gameState.heroes = [
-        createHero("亞瑟 (主人公)", "male", { str: 14, con: 14, mnd: 10, dex: 10, agi: 10, luk: 10 }, 'front'),
-        createHero("莉莉絲", "female", { str: 8, con: 9, mnd: 16, dex: 12, agi: 12, luk: 10 }, 'back')
+        createHero("亞瑟 (主人公)", "male", 'front'),
+        createHero("莉莉絲", "female", 'back')
     ];
 }
 
+// 計算角色最終屬性 (融合基礎、資質、性格與轉職補正)
 function getHeroStats(hero) {
-    let s = hero.baseStats;
+    let s = { ...hero.baseStats };
+    let m = hero.jobModifiers;
     let lv = hero.level;
-    let maxHp = s.con * 14 + s.str * 4 + lv * 15;
-    let maxMp = s.mnd * 8 + lv * 5;
+
+    // 根據等級與資質評分成長
+    Object.keys(hero.growthGrades).forEach(k => {
+        let gradeVal = GRADE_VALUES[hero.growthGrades[k]] || 1.0;
+        s[k] += Math.floor((lv - 1) * gradeVal * 1.5);
+    });
+
+    // 套用轉職補正
+    Object.keys(m).forEach(k => {
+        if(s[k] !== undefined) s[k] += m[k];
+    });
+
+    // 套用性格倍率
+    hero.traits.forEach(t => {
+        let eff = t.effect;
+        if(eff.atkMult) s.str *= eff.atkMult;
+        if(eff.defMult) s.con *= eff.defMult;
+        if(eff.mndMult) s.mnd *= eff.mndMult;
+        if(eff.dexMult) s.dex *= eff.dexMult;
+        if(eff.conMult) s.con *= eff.conMult;
+        if(eff.allMult) {
+            s.str *= eff.allMult; s.con *= eff.allMult; s.mnd *= eff.mndMult || eff.allMult;
+            s.dex *= eff.allMult; s.agi *= eff.allMult; s.luk *= eff.allMult;
+        }
+    });
+
+    let maxHp = Math.floor(s.con * 14 + s.str * 4 + lv * 15);
+    let maxMp = Math.floor(s.mnd * 8 + lv * 5);
     let hpRegen = parseFloat((s.con * 0.5).toFixed(1)); 
-    let atk = s.str * 2.2 + s.dex * 0.6;
-    let matk = s.mnd * 2.5;
-    let def = s.con * 1.8;
-    let spd = s.agi * 1.2;
+    let atk = Math.floor(s.str * 2.2 + s.dex * 0.6 + (m.atk || 0));
+    let matk = Math.floor(s.mnd * 2.5 + (m.matk || 0));
+    let def = Math.floor(s.con * 1.8 + (m.def || 0));
+    let spd = Math.floor(s.agi * 1.2);
+
     return { maxHp, maxMp, hpRegen, atk, matk, def, spd, ...s };
 }
 
-// 存檔與讀檔
+// 存檔系統
 function saveGame() {
     try {
         localStorage.setItem('guild_and_dungeon_save', JSON.stringify(gameState));
@@ -92,7 +165,7 @@ function manualSaveGame() {
 function resetSaveData() {
     if (confirm("確定要重置所有資料並重新開始嗎？")) {
         localStorage.removeItem('guild_and_dungeon_save');
-        gameState.gold = 200;
+        gameState.gold = 300;
         gameState.isExploring = false;
         initDefaultHeroes();
         saveGame();
@@ -113,7 +186,6 @@ function loadGame() {
     }
 }
 
-// 頁籤切換
 function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
@@ -140,6 +212,7 @@ function renderAll() {
     renderShop();
     renderQuests();
     renderBestiary();
+    if (currentModalHeroId) openHeroModal(currentModalHeroId, true);
 }
 
 function renderDungeonSelect() {
@@ -157,18 +230,17 @@ function renderDungeonSelect() {
 
 function changeDungeon(id) {
     if (gameState.isExploring) {
-        alert("請先停止探索或結算回城才能更換地下城！");
+        alert("請先停止探索或結算回城才能更換！");
         return;
     }
     gameState.activeDungeonId = id;
     gameState.waveCount = 0;
     gameState.bossAvailable = false;
     gameState.inBossFight = false;
-    log(`[切換關卡] 準備前往 ${DUNGEONS.find(d=>d.id===id).name}`);
+    log(`[切換關卡] ${DUNGEONS.find(d=>d.id===id).name}`);
     renderAll();
 }
 
-// 開始/停止探索開關
 function toggleExplore() {
     gameState.isExploring = !gameState.isExploring;
     let btn = document.getElementById('explore-btn');
@@ -177,68 +249,56 @@ function toggleExplore() {
         btn.innerText = "🛑 停止探索";
         btn.className = "btn btn-danger";
         pauseBtn.style.display = "inline-block";
-        log("🚀 隊伍正式出發，開始深入地下城探索！");
+        log("🚀 隊伍出發深入地下城！");
     } else {
         btn.innerText = "🚀 開始探索";
         btn.className = "btn btn-success";
         pauseBtn.style.display = "none";
-        log("⏸️ 探索已暫停。");
+        log("⏸️ 探索暫停。");
     }
     renderAll();
 }
 
 function togglePause() {
     gameState.isPaused = !gameState.isPaused;
-    let btn = document.getElementById('pause-btn');
-    btn.innerText = gameState.isPaused ? "▶️ 繼續" : "⏸️ 暫停";
-    log(gameState.isPaused ? "[系統] 戰鬥暫停中..." : "[系統] 恢復戰鬥！");
+    document.getElementById('pause-btn').innerText = gameState.isPaused ? "▶️ 繼續" : "⏸️ 暫停";
 }
 
-// 🏠 結算回城與戰利品入庫
 function retreatAndSettle() {
     gameState.isExploring = false;
     gameState.isPaused = false;
     
-    // 正式結算暫存收穫
     let addedGold = gameState.tempSpoils.gold;
     gameState.gold += addedGold;
     
-    // 將暫存道具加入背包
     gameState.tempSpoils.items.forEach(itemName => {
         let found = gameState.inventory.find(i => i.name === itemName);
-        if (found) {
-            found.count++;
-        } else {
-            gameState.inventory.push({ id: "loot_" + Date.now(), name: itemName, type: "material", count: 1, desc: "地下城探險獲得的素材" });
-        }
+        if (found) found.count++;
+        else gameState.inventory.push({ id: "loot_" + Date.now(), name: itemName, type: "material", count: 1, desc: "冒險收穫素材" });
     });
 
-    log(`🏠 隊伍成功返回城鎮！本次探險結算：獲得 ${addedGold} 金幣，戰利品已入庫。`);
+    log(`🏠 結算回城！獲得金幣: ${addedGold}`);
     alert(`結算回城成功！獲得金幣: ${addedGold}`);
 
-    // 清空暫存
     gameState.tempSpoils = { gold: 0, items: [], exp: 0 };
     gameState.currentEnemies = { front: [], back: [] };
     gameState.waveCount = 0;
     gameState.bossAvailable = false;
     gameState.inBossFight = false;
 
-    // 恢復全隊狀態
     gameState.heroes.forEach(h => {
         let st = getHeroStats(h);
         h.hp = st.maxHp;
     });
 
-    let exploreBtn = document.getElementById('explore-btn');
-    if (exploreBtn) { exploreBtn.innerText = "🚀 開始探索"; exploreBtn.className = "btn btn-success"; }
-    let pauseBtn = document.getElementById('pause-btn');
-    if (pauseBtn) pauseBtn.style.display = "none";
+    document.getElementById('explore-btn').innerText = "🚀 開始探索";
+    document.getElementById('explore-btn').className = "btn btn-success";
+    document.getElementById('pause-btn').style.display = "none";
 
     saveGame();
     renderAll();
 }
 
-// 渲染前後排隊伍
 function renderPartyView() {
     let frontContainer = document.getElementById('party-front-list');
     let backContainer = document.getElementById('party-back-list');
@@ -247,15 +307,10 @@ function renderPartyView() {
     frontContainer.innerHTML = "";
     backContainer.innerHTML = "";
     
-    if (!gameState.heroes || gameState.heroes.length === 0) {
-        frontContainer.innerHTML = "<p style='font-size:12px; color:#aaa;'>無成員</p>";
-        return;
-    }
-
     gameState.heroes.forEach(h => {
         let st = getHeroStats(h);
         let genderIcon = h.gender === 'female' ? '<span style="color:#ff7675;">♀</span>' : '<span style="color:#74b9ff;">♂</span>';
-        let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
+        let jobName = JOBS[h.job] ? JOBS[h.job].name : '無業遊民';
         let html = `
             <div class="entity-card">
                 <div style="display:flex; justify-content:space-between;">
@@ -266,11 +321,8 @@ function renderPartyView() {
                 <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, Math.max(0, (h.hp/st.maxHp)*100))}%;"></div></div>
             </div>
         `;
-        if (h.row === 'back') {
-            backContainer.innerHTML += html;
-        } else {
-            frontContainer.innerHTML += html;
-        }
+        if (h.row === 'back') backContainer.innerHTML += html;
+        else frontContainer.innerHTML += html;
     });
 }
 
@@ -281,17 +333,10 @@ function renderEnemiesView() {
 
     frontContainer.innerHTML = "";
     backContainer.innerHTML = "";
-    
-    let waveCounter = document.getElementById('wave-counter');
-    if (waveCounter) waveCounter.innerText = `(波次: ${gameState.waveCount}/10)`;
+    document.getElementById('wave-counter').innerText = `(波次: ${gameState.waveCount}/10)`;
 
-    // 若探索中且沒有敵人，生成波次
     if (gameState.isExploring && gameState.currentEnemies.front.length === 0 && gameState.currentEnemies.back.length === 0 && !gameState.bossAvailable) {
         spawnWave();
-    }
-
-    if (gameState.currentEnemies.front.length === 0 && gameState.currentEnemies.back.length === 0) {
-        frontContainer.innerHTML = "<div style='font-size:12px; color:#aaa;'>等待探索索敵中...</div>";
     }
 
     gameState.currentEnemies.front.forEach(e => {
@@ -327,7 +372,6 @@ function renderEnemiesView() {
 function spawnWave() {
     let dung = DUNGEONS.find(d => d.id === gameState.activeDungeonId);
     if (!dung) return;
-    
     let frontMob = dung.mobs[Math.floor(Math.random() * dung.mobs.length)];
     let backMob = dung.mobs[Math.floor(Math.random() * dung.mobs.length)];
 
@@ -335,7 +379,6 @@ function spawnWave() {
         front: [{ ...frontMob, maxHp: frontMob.hp, id: "mob_f_" + Date.now() }],
         back: [{ ...backMob, maxHp: backMob.hp, id: "mob_b_" + Date.now() }]
     };
-    
     if (!gameState.bestiary[frontMob.id]) gameState.bestiary[frontMob.id] = { ...frontMob, kills: 0 };
     if (!gameState.bestiary[backMob.id]) gameState.bestiary[backMob.id] = { ...backMob, kills: 0 };
 }
@@ -349,127 +392,119 @@ function triggerBossFight() {
         front: [{ ...dung.boss, maxHp: dung.boss.hp, id: "boss_" + Date.now() }],
         back: []
     };
-    log(`🔥 [Boss戰] 終極首領 ${dung.boss.name} 降臨前排！`);
+    log(`🔥 首領 ${dung.boss.name} 降臨！`);
     renderAll();
 }
 
-// 核心戰鬥迴圈（支援前後排索敵、藥水精確消耗、掛機升級、來有往交鋒）
+// 戰鬥與技能冷卻迴圈
 function startBattleLoop() {
     setInterval(() => {
         if (!gameState.isExploring || gameState.isPaused) return;
 
-        let thresholdEl = document.getElementById('auto-potion-threshold');
-        let potionTypeEl = document.getElementById('auto-potion-type');
-        let threshold = thresholdEl ? parseInt(thresholdEl.value) || 40 : 40;
-        let potionType = potionTypeEl ? potionTypeEl.value : 'pot_small';
+        let threshold = parseInt(document.getElementById('auto-potion-threshold').value) || 40;
+        let potionType = document.getElementById('auto-potion-type').value;
 
-        // 1. 自動喝藥與自然恢復
+        // 自然恢復與自動喝藥
         gameState.heroes.forEach(h => {
             let st = getHeroStats(h);
-            if (h.hp > 0 && h.hp < st.maxHp) {
-                h.hp = Math.min(st.maxHp, h.hp + st.hpRegen);
-            }
-            if (h.hp > 0 && (h.hp / st.maxHp * 100) < threshold) {
-                usePotion(h, potionType);
-            }
+            if (h.hp > 0 && h.hp < st.maxHp) h.hp = Math.min(st.maxHp, h.hp + st.hpRegen);
+            if (h.hp > 0 && (h.hp / st.maxHp * 100) < threshold) usePotion(h, potionType);
+
+            // 回合冷卻縮減
+            Object.keys(h.skillCooldowns).forEach(sk => {
+                if (h.skillCooldowns[sk] > 0) h.skillCooldowns[sk]--;
+            });
         });
 
-        // 2. 戰鬥交鋒
         let frontEnemies = gameState.currentEnemies.front;
         let backEnemies = gameState.currentEnemies.back;
 
         if (frontEnemies.length > 0 || backEnemies.length > 0) {
-            // 索敵規則：優先攻擊前排友軍，前排陣亡才攻擊後衛
-            let livingFrontHeroes = gameState.heroes.filter(h => h.row === 'front' && h.hp > 0);
-            let livingBackHeroes = gameState.heroes.filter(h => h.row === 'back' && h.hp > 0);
-            let activeHero = livingFrontHeroes.length > 0 ? livingFrontHeroes[Math.floor(Math.random() * livingFrontHeroes.length)] : (livingBackHeroes.length > 0 ? livingBackHeroes[0] : null);
+            let livingFront = gameState.heroes.filter(h => h.row === 'front' && h.hp > 0);
+            let livingBack = gameState.heroes.filter(h => h.row === 'back' && h.hp > 0);
+            let activeHero = livingFront.length > 0 ? livingFront[Math.floor(Math.random() * livingFront.length)] : (livingBack.length > 0 ? livingBack[0] : null);
 
-            // 敵方索敵規則：近戰打前排，遠程有機會打後排
             let activeEnemy = frontEnemies.length > 0 ? frontEnemies[0] : backEnemies[0];
 
             if (activeHero && activeEnemy) {
                 let heroSt = getHeroStats(activeHero);
-                
-                // --- 我方攻擊敵人 (英雄優先攻擊前排敵人，前排清空才能打後排)
                 let targetEnemy = frontEnemies.length > 0 ? frontEnemies[0] : backEnemies[0];
-                let dmgToEnemy = Math.max(2, Math.floor(heroSt.atk - targetEnemy.def * 0.5));
-                targetEnemy.hp -= dmgToEnemy;
-                log(`⚔️ [${activeHero.name}] 對 [${targetEnemy.name}] 造成 ${dmgToEnemy} 點傷害`);
 
-                // 檢查敵人是否死亡
-                if (targetEnemy.hp <= 0) {
-                    log(`☠️ 擊敗了 [${targetEnemy.name}]！獲得 ${targetEnemy.gold} 金幣與戰利品`);
-                    
-                    // 放入暫存收穫
-                    gameState.tempSpoils.gold += targetEnemy.gold;
-                    if (Math.random() < 0.4) {
-                        gameState.tempSpoils.items.push("魔獸素材");
-                    }
-
-                    // 任務計數
-                    gameState.quests.forEach(q => {
-                        if (q.targetMob === targetEnemy.id && !q.completed) {
-                            q.count++;
-                            if (q.count >= q.maxCount) q.completed = true;
+                // 技能施放判定
+                let usedSkill = null;
+                if (activeHero.equippedSkills && activeHero.equippedSkills.length > 0) {
+                    for (let skId of activeHero.equippedSkills) {
+                        let sk = SKILLS[skId];
+                        if (sk && (!activeHero.skillCooldowns[skId] || activeHero.skillCooldowns[skId] === 0)) {
+                            usedSkill = sk;
+                            activeHero.skillCooldowns[skId] = sk.cd;
+                            break;
                         }
-                    });
+                    }
+                }
 
-                    // 經驗分配
+                let dmgToEnemy = 0;
+                if (usedSkill && usedSkill.type === 'attack') {
+                    dmgToEnemy = Math.max(3, Math.floor(heroSt.atk * usedSkill.power - targetEnemy.def * 0.4));
+                    log(`✨ [${activeHero.name}] 使用 [${usedSkill.name}] 對 [${targetEnemy.name}] 造成 ${dmgToEnemy} 傷害！`);
+                } else if (usedSkill && usedSkill.type === 'heal') {
+                    let healAmt = Math.floor(heroSt.matk * usedSkill.power);
+                    activeHero.hp = Math.min(heroSt.maxHp, activeHero.hp + healAmt);
+                    log(`💖 [${activeHero.name}] 使用 [${usedSkill.name}] 恢復 ${healAmt} 生命！`);
+                } else {
+                    dmgToEnemy = Math.max(2, Math.floor(heroSt.atk - targetEnemy.def * 0.5));
+                    log(`⚔️ [${activeHero.name}] 攻擊 [${targetEnemy.name}] 造成 ${dmgToEnemy} 傷害`);
+                }
+
+                targetEnemy.hp -= dmgToEnemy;
+
+                if (targetEnemy.hp <= 0) {
+                    log(`☠️ 擊敗 [${targetEnemy.name}]！獲得 ${targetEnemy.gold} 金幣`);
+                    
+                    // 提升掉落率 (高概率獲得素材與金幣)
+                    gameState.tempSpoils.gold += targetEnemy.gold * 1.5;
+                    if (Math.random() < 0.75) gameState.tempSpoils.items.push("高級魔獸素材");
+
                     activeHero.exp += targetEnemy.exp;
                     if (activeHero.exp >= activeHero.maxExp) {
                         activeHero.level++;
                         activeHero.exp -= activeHero.maxExp;
                         activeHero.maxExp = Math.floor(activeHero.maxExp * 1.4);
-                        activeHero.freePoints += 3;
-                        log(`🎉 ${activeHero.name} 升級至 Lv.${activeHero.level}！`);
+                        log(`🎉 ${activeHero.name} 升級至 Lv.${activeHero.level}！六維資質自動成長！`);
                     }
 
-                    // 從陣型中移除死亡敵人
-                    if (frontEnemies.includes(targetEnemy)) {
-                        gameState.currentEnemies.front = frontEnemies.filter(e => e !== targetEnemy);
-                    } else {
-                        gameState.currentEnemies.back = backEnemies.filter(e => e !== targetEnemy);
-                    }
+                    if (frontEnemies.includes(targetEnemy)) gameState.currentEnemies.front = frontEnemies.filter(e => e !== targetEnemy);
+                    else gameState.currentEnemies.back = backEnemies.filter(e => e !== targetEnemy);
 
-                    // 如果所有敵人清空，進入下一波（滿10波後可無限掛機打小怪或打王）
                     if (gameState.currentEnemies.front.length === 0 && gameState.currentEnemies.back.length === 0) {
                         if (gameState.inBossFight) {
                             gameState.inBossFight = false;
                             gameState.waveCount = 0;
-                            log(`🏆 成功擊殺本層 Boss！獲得大量稀有獎勵！`);
-                            gameState.tempSpoils.gold += 300;
-                            gameState.tempSpoils.items.push("稀有龍鱗");
+                            log(`🏆 擊殺 Boss 成功！獲得傳說素材與大量金幣！`);
+                            gameState.tempSpoils.gold += 500;
+                            gameState.tempSpoils.items.push("深淵龍鱗");
                         } else {
                             gameState.waveCount++;
-                            log(`✨ 完成第 ${gameState.waveCount} 波討伐！`);
                             if (gameState.waveCount >= 10 && !gameState.bossAvailable) {
                                 gameState.bossAvailable = true;
-                                log(`🔔 已達 10 波！您可以點擊「挑戰 Boss」或繼續掛機刷怪升級！`);
+                                log(`🔔 已達 10 波，可隨時挑戰 Boss 或繼續掛機！`);
                             }
                         }
                     }
                 } else {
-                    // --- 敵方反擊 (優先攻擊我方前排)
-                    let targetHero = livingFrontHeroes.length > 0 ? livingFrontHeroes[Math.floor(Math.random() * livingFrontHeroes.length)] : activeHero;
+                    let targetHero = livingFront.length > 0 ? livingFront[Math.floor(Math.random() * livingFront.length)] : activeHero;
                     let targetSt = getHeroStats(targetHero);
                     let dmgToHero = Math.max(2, Math.floor(activeEnemy.atk - targetSt.def * 0.4));
                     targetHero.hp -= dmgToHero;
-                    log(`💥 [${activeEnemy.name}] 反擊 [${targetHero.name}]，造成 ${dmgToHero} 傷害`);
-
-                    if (targetHero.hp <= 0) {
-                        log(`💀 [${targetHero.name}] 支撐不住倒下了！`);
-                    }
+                    log(`💥 [${activeEnemy.name}] 反擊 [${targetHero.name}] 造成 ${dmgToHero} 傷害`);
                 }
             }
         }
-
         renderPartyView();
         renderEnemiesView();
-        renderAll();
     }, 1200);
 }
 
-// 精確扣除藥水與計數
 function usePotion(hero, potionId) {
     let invItem = gameState.inventory.find(i => i.id === potionId && i.count > 0);
     if (invItem) {
@@ -478,16 +513,11 @@ function usePotion(hero, potionId) {
         let healAmt = potData ? potData.heal : 80;
         let st = getHeroStats(hero);
         hero.hp = Math.min(st.maxHp, hero.hp + healAmt);
-        log(`🧪 ${hero.name} 自動使用了 ${potData.name}，恢復 ${healAmt} HP (剩餘: ${invItem.count})`);
-        
-        if (invItem.count <= 0) {
-            gameState.inventory = gameState.inventory.filter(i => i !== invItem);
-        }
+        if (invItem.count <= 0) gameState.inventory = gameState.inventory.filter(i => i !== invItem);
         renderInventory();
     }
 }
 
-// 招募新冒險者 (支援分配前衛/後衛)
 function recruitHero() {
     if (gameState.gold >= 100) {
         gameState.gold -= 100;
@@ -496,17 +526,9 @@ function recruitHero() {
         let randomName = nameList[Math.floor(Math.random() * nameList.length)];
         let rowChoice = gameState.heroes.filter(h => h.row === 'front').length < 3 ? 'front' : 'back';
         
-        let newHero = createHero(randomName, gender, { 
-            str: 10 + Math.floor(Math.random()*6), 
-            con: 10 + Math.floor(Math.random()*6), 
-            mnd: 10 + Math.floor(Math.random()*6), 
-            dex: 10 + Math.floor(Math.random()*6), 
-            agi: 10 + Math.floor(Math.random()*6), 
-            luk: 10 + Math.floor(Math.random()*6) 
-        }, rowChoice);
-        
+        let newHero = createHero(randomName, gender, rowChoice);
         gameState.heroes.push(newHero);
-        log(`🍻 成功招募新冒險者：${randomName} (${gender === 'male' ? '男 ♂' : '女 ♀'} - ${rowChoice === 'front' ? '前衛' : '後衛'})！`);
+        log(`🍻 成功招募：${randomName} (${gender === 'male' ? '男 ♂' : '女 ♀'})！`);
         renderAll();
         saveGame();
     } else {
@@ -514,7 +536,132 @@ function recruitHero() {
     }
 }
 
-// 渲染英雄、背包、商店與日誌
+// 角色詳情 Modal 頁籤切換
+function switchModalTab(tab) {
+    currentModalTab = tab;
+    document.querySelectorAll('.modal-tab-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    if (currentModalHeroId) openHeroModal(currentModalHeroId, true);
+}
+
+function openHeroModal(heroId, isRefresh = false) {
+    currentModalHeroId = heroId;
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (!h) return;
+    let st = getHeroStats(h);
+    let body = document.getElementById('modal-hero-body');
+    if (!body) return;
+
+    if (currentModalTab === 'stats') {
+        let traitsHtml = h.traits.map(t => `<span style="background:#2a2d3d; padding:2px 6px; border-radius:4px; font-size:11px; color:var(--accent); margin-right:5px;" title="${t.desc}">${t.name}</span>`).join('');
+        
+        body.innerHTML = `
+            <h3>${h.name} (${h.gender === 'female' ? '女 ♀' : '男 ♂'})</h3>
+            <p style="font-size:12px; color:#aaa;">性格: ${traitsHtml}</p>
+            <p style="color:var(--accent);">當前職業: ${JOBS[h.job].name} | 等級: Lv.${h.level}</p>
+            
+            <h4 style="margin:10px 0 5px 0;">📊 六維數值與天生資質評分</h4>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:12px; background:#161720; padding:10px; border-radius:6px;">
+                <div>力量 (STR): ${Math.floor(st.str)} <span style="color:var(--accent);">[${h.growthGrades.str}]</span></div>
+                <div>體質 (CON): ${Math.floor(st.con)} <span style="color:var(--accent);">[${h.growthGrades.con}]</span></div>
+                <div>精神 (MND): ${Math.floor(st.mnd)} <span style="color:var(--accent);">[${h.growthGrades.mnd}]</span></div>
+                <div>靈巧 (DEX): ${Math.floor(st.dex)} <span style="color:var(--accent);">[${h.growthGrades.dex}]</span></div>
+                <div>敏捷 (AGI): ${Math.floor(st.agi)} <span style="color:var(--accent);">[${h.growthGrades.agi}]</span></div>
+                <div>幸運 (LUK): ${Math.floor(st.luk)} <span style="color:var(--accent);">[${h.growthGrades.luk}]</span></div>
+            </div>
+
+            <h4 style="margin:15px 0 5px 0;">📜 轉職樹與職業參數補正</h4>
+            <div style="max-height:200px; overflow-y:auto;">
+                ${Object.keys(JOBS).map(jKey => {
+                    let j = JOBS[jKey];
+                    let canReq = true;
+                    Object.keys(j.req).forEach(rKey => { if (st[rKey] < j.req[rKey]) canReq = false; });
+                    let modDesc = Object.keys(j.modifiers).map(mk => `${mk}+${j.modifiers[mk]}`).join(', ');
+                    return `
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; background:#161720; padding:6px; border-radius:4px;">
+                            <div>
+                                <strong style="font-size:13px;">${j.name}</strong>
+                                <div style="font-size:10px; color:#aaa;">要求: ${JSON.stringify(j.req)} | 補正: [${modDesc}]</div>
+                            </div>
+                            <button class="btn ${canReq ? 'btn-success' : 'btn-danger'}" ${!canReq ? 'disabled' : ''} style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">
+                                ${h.job === j.id ? '當前' : (canReq ? '轉職' : '未達標')}
+                            </button>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    } else {
+        // 技能與裝備設置頁籤
+        let availableSkills = JOBS[h.job] && JOBS[h.job].skills ? JOBS[h.job].skills : [];
+        body.innerHTML = `
+            <h3>${h.name} - 技能設置</h3>
+            <p style="font-size:12px; color:#aaa;">在此管理已解鎖並裝配的戰鬥技能（最多可裝配 3 個）</p>
+            <div style="margin-top:10px;">
+                <h4>已裝配技能</h4>
+                <div style="display:flex; gap:8px; margin-bottom:15px;">
+                    ${h.equippedSkills.map(skId => {
+                        let sk = SKILLS[skId];
+                        return `<div style="background:#2a2d3d; padding:8px; border-radius:4px; font-size:12px;"><strong>${sk.name}</strong><br><span style="font-size:10px; color:#aaa;">CD: ${sk.cd}回合 | ${sk.desc}</span></div>`;
+                    }).join('')}
+                </div>
+                <h4>解鎖職業技能</h4>
+                ${availableSkills.map(skId => {
+                    let sk = SKILLS[skId];
+                    let isEquipped = h.equippedSkills.includes(skId);
+                    return `
+                        <div style="display:flex; justify-content:space-between; align-items:center; background:#161720; padding:8px; border-radius:4px; margin-bottom:6px;">
+                            <div>
+                                <strong>${sk.name}</strong> <span style="font-size:10px; color:var(--accent);">[${sk.type}]</span>
+                                <div style="font-size:11px; color:#aaa;">${sk.desc} (冷卻: ${sk.cd}回合)</div>
+                            </div>
+                            <button class="btn ${isEquipped ? 'btn-danger' : 'btn-primary'}" style="font-size:11px;" onclick="toggleSkill('${h.id}', '${skId}')">
+                                ${isEquipped ? '卸下' : '裝配'}
+                            </button>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    if (!isRefresh) document.getElementById('hero-modal').style.display = 'flex';
+}
+
+function toggleSkill(heroId, skId) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (!h) return;
+    if (h.equippedSkills.includes(skId)) {
+        h.equippedSkills = h.equippedSkills.filter(s => s !== skId);
+    } else {
+        if (h.equippedSkills.length < 3) h.equippedSkills.push(skId);
+        else alert("最多只能裝配 3 個技能！");
+    }
+    openHeroModal(heroId, true);
+    saveGame();
+}
+
+function changeHeroJob(heroId, jobId) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (h) {
+        h.job = jobId;
+        h.jobModifiers = JOBS[jobId].modifiers || {};
+        if (JOBS[jobId].skills && JOBS[jobId].skills.length > 0) {
+            let newSk = JOBS[jobId].skills[0];
+            if (!h.equippedSkills.includes(newSk) && h.equippedSkills.length < 3) h.equippedSkills.push(newSk);
+        }
+        log(`✨ ${h.name} 成功轉職為 ${JOBS[jobId].name}！永久獲得參數補正！`);
+        openHeroModal(heroId, true);
+        renderAll();
+        saveGame();
+    }
+}
+
+function closeHeroModal() {
+    currentModalHeroId = null;
+    document.getElementById('hero-modal').style.display = 'none';
+}
+
 function renderHeroList() {
     let container = document.getElementById('hero-list');
     if (!container) return;
@@ -525,80 +672,12 @@ function renderHeroList() {
         container.innerHTML += `
             <div class="card">
                 <h4>${h.name} ${genderIcon}</h4>
-                <p style="font-size:12px; color:var(--accent);">職階: ${JOBS[h.job].name} | 陣型: ${h.row === 'front' ? '前衛' : '後衛'}</p>
-                <p style="font-size:12px;">STR: ${st.str} | CON: ${st.con} | MND: ${st.mnd}</p>
-                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="openHeroModal('${h.id}')">查看詳情 / 轉職</button>
+                <p style="font-size:12px; color:var(--accent);">${JOBS[h.job].name} | 陣型: ${h.row === 'front' ? '前衛' : '後衛'}</p>
+                <p style="font-size:12px;">STR: ${Math.floor(st.str)} | CON: ${Math.floor(st.con)} | MND: ${Math.floor(st.mnd)}</p>
+                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="openHeroModal('${h.id}')">管理角色</button>
             </div>
         `;
     });
-}
-
-function openHeroModal(heroId) {
-    let h = gameState.heroes.find(x => x.id === heroId);
-    if (!h) return;
-    let st = getHeroStats(h);
-    let body = document.getElementById('modal-hero-body');
-    if (!body) return;
-    
-    let jobOptionsHtml = "";
-    Object.keys(JOBS).forEach(jKey => {
-        let j = JOBS[jKey];
-        let canReq = true;
-        Object.keys(j.req).forEach(rKey => {
-            if (st[rKey] < j.req[rKey]) canReq = false;
-        });
-        jobOptionsHtml += `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; background:#161720; padding:6px; border-radius:4px;">
-                <span style="font-size:13px;">${j.name}</span>
-                <button class="btn ${canReq ? 'btn-success' : 'btn-danger'}" ${!canReq ? 'disabled' : ''} style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">
-                    ${h.job === j.id ? '當前' : (canReq ? '轉職' : '未達門檻')}
-                </button>
-            </div>
-        `;
-    });
-
-    body.innerHTML = `
-        <h3>${h.name} 詳情面板</h3>
-        <p style="color:var(--accent);">可用屬性點: ${h.freePoints}</p>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px;">
-            <div>力量: ${h.baseStats.str} <button onclick="addStat('${h.id}', 'str')">+</button></div>
-            <div>體質: ${h.baseStats.con} <button onclick="addStat('${h.id}', 'con')">+</button></div>
-            <div>精神: ${h.baseStats.mnd} <button onclick="addStat('${h.id}', 'mnd')">+</button></div>
-            <div>靈巧: ${h.baseStats.dex} <button onclick="addStat('${h.id}', 'dex')">+</button></div>
-            <div>敏捷: ${h.baseStats.agi} <button onclick="addStat('${h.id}', 'agi')">+</button></div>
-            <div>幸運: ${h.baseStats.luk} <button onclick="addStat('${h.id}', 'luk')">+</button></div>
-        </div>
-        <hr style="border-color:var(--panel-border); margin:15px 0;">
-        <h4>轉職樹</h4>
-        ${jobOptionsHtml}
-    `;
-    document.getElementById('hero-modal').style.display = 'flex';
-}
-
-function addStat(heroId, statKey) {
-    let h = gameState.heroes.find(x => x.id === heroId);
-    if (h && h.freePoints > 0) {
-        h.freePoints--;
-        h.baseStats[statKey]++;
-        openHeroModal(heroId);
-        renderAll();
-        saveGame();
-    }
-}
-
-function changeHeroJob(heroId, jobId) {
-    let h = gameState.heroes.find(x => x.id === heroId);
-    if (h) {
-        h.job = jobId;
-        log(`✨ ${h.name} 轉職為 ${JOBS[jobId].name}！`);
-        openHeroModal(heroId);
-        renderAll();
-        saveGame();
-    }
-}
-
-function closeHeroModal() {
-    document.getElementById('hero-modal').style.display = 'none';
 }
 
 function renderInventory() {
@@ -613,12 +692,6 @@ function renderInventory() {
             </div>
         `;
     });
-}
-
-function filterInv(type) {
-    document.querySelectorAll('.sub-btn').forEach(b => b.classList.remove('active'));
-    if (event && event.target) event.target.classList.add('active');
-    renderInventory();
 }
 
 function renderShop() {
@@ -642,11 +715,8 @@ function buyShopItem(id) {
     if (gameState.gold >= item.cost) {
         gameState.gold -= item.cost;
         let invItem = gameState.inventory.find(i => i.id === id);
-        if (invItem) {
-            invItem.count++;
-        } else {
-            gameState.inventory.push({ ...item, count: 1 });
-        }
+        if (invItem) invItem.count++;
+        else gameState.inventory.push({ ...item, count: 1 });
         log(`🛍️ 購買了 ${item.name}`);
         renderAll();
         saveGame();
@@ -676,7 +746,7 @@ function claimQuest(id) {
     if (q && q.completed && !q.claimed) {
         q.claimed = true;
         gameState.gold += q.rewardGold;
-        log(`📜 任務獎勵已領取：+${q.rewardGold} 金幣`);
+        log(`📜 任務獎勵：+${q.rewardGold} 金幣`);
         renderAll();
         saveGame();
     }
