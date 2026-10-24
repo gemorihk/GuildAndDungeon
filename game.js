@@ -2,10 +2,11 @@ let gameState = {
     gold: 500,
     gems: 20,
     guildLv: 1,
+    maxTierUnlocked: 1, // 最高解鎖階層，影響商店等級與任務上限
     heroes: [],
     inventory: [
-        { id: "pot_small", name: "小型回復藥水", type: "potion", heal: 80, count: 10 },
-        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", equipType: "sword", atk: 15, count: 1, desc: "基礎長劍" }
+        { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, count: 10, desc: "恢復 80 點生命值" },
+        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, count: 1, desc: "基礎戰士長劍" }
     ],
     bestiary: {},
     activeDungeonId: "goblin_cave",
@@ -16,14 +17,15 @@ let gameState = {
     inBossFight: false,
     currentEnemies: { front: [], back: [] },
     tempSpoils: { gold: 0, items: [], exp: 0 },
-    quests: [
-        { id: "q1", title: "清掃哥布林", targetMob: "goblin", count: 0, maxCount: 10, rewardGold: 150, completed: false, claimed: false }
-    ]
+    activeQuests: [] // 玩家手動接取的任務
 };
 
 let currentModalHeroId = null;
+let currentJobModalHeroId = null;
+let selectedJobIdForView = null;
 let currentModalTab = 'stats';
 let currentInvFilter = 'all';
+let currentShopFilter = 'all';
 
 window.onload = function() {
     loadGame();
@@ -63,15 +65,10 @@ function createHero(name, gender, row = 'front', gen = 1) {
         id: "hero_" + Date.now() + "_" + Math.floor(Math.random()*100000),
         name: name,
         gender: gender,
-        row: row, // 'front', 'back', 'reserve' (未上陣)
+        row: row,
         generation: gen,
-        level: 1,
-        exp: 0,
-        maxExp: 100,
-        job: "novice",
-        jobLevel: 1,
-        jobExp: 0,
-        maxJobExp: 50,
+        level: 1, exp: 0, maxExp: 100,
+        job: "novice", jobLevel: 1, jobExp: 0, maxJobExp: 50,
         isDead: false,
         traits: heroTraits,
         growthGrades: {
@@ -177,8 +174,10 @@ function resetSaveData() {
     if (confirm("確定要重置所有資料並重新開始嗎？")) {
         localStorage.removeItem('guild_and_dungeon_save');
         gameState.gold = 500;
+        gameState.maxTierUnlocked = 1;
         gameState.isExploring = false;
         gameState.waveCount = 0;
+        gameState.activeQuests = [];
         gameState.currentEnemies = { front: [], back: [] };
         initDefaultHeroes();
         saveGame();
@@ -245,6 +244,13 @@ function filterInv(type, btnElement) {
     document.querySelectorAll('#tab-inventory .sub-btn').forEach(b => b.classList.remove('active'));
     if (btnElement) btnElement.classList.add('active');
     renderInventory();
+}
+
+function filterShop(type, btnElement) {
+    currentShopFilter = type;
+    document.querySelectorAll('#tab-shop .sub-btn').forEach(b => b.classList.remove('active'));
+    if (btnElement) btnElement.classList.add('active');
+    renderShop();
 }
 
 function renderAll() {
@@ -336,7 +342,7 @@ function retreatAndSettle() {
         gameState.tempSpoils.items.forEach(itemName => {
             let found = gameState.inventory.find(i => i.name === itemName);
             if (found) found.count++;
-            else gameState.inventory.push({ id: "loot_" + Date.now(), name: itemName, type: "material", count: 1, desc: "地下城探險素材" });
+            else gameState.inventory.push({ id: "loot_" + Date.now(), name: itemName, type: "material", category: "material", count: 1, desc: "地下城探險素材" });
         });
     }
 
@@ -378,7 +384,7 @@ function renderPartyView() {
     if (!gameState.heroes || gameState.heroes.length === 0) return;
 
     gameState.heroes.forEach(h => {
-        if (h.row === 'reserve') return; // 未上陣不顯示在戰鬥列表中
+        if (h.row === 'reserve') return;
 
         let st = getHeroStats(h);
         let genderIcon = h.gender === 'female' ? '<span style="color:#ff7675;">♀</span>' : '<span style="color:#74b9ff;">♂</span>';
@@ -554,26 +560,17 @@ function startBattleLoop() {
                     
                     gameState.tempSpoils.gold += targetEnemy.gold;
                     
-                    gameState.quests.forEach(q => {
+                    // 累計手動接取任務數
+                    gameState.activeQuests.forEach(q => {
                         if (q.targetMob === targetEnemy.mobId && !q.completed) {
                             q.count++;
                             if (q.count >= q.maxCount) q.completed = true;
                         }
                     });
 
-                    if (Math.random() < 0.35 && typeof EQUIPMENT_TEMPLATES !== 'undefined') {
-                        let randEquip = EQUIPMENT_TEMPLATES[Math.floor(Math.random() * EQUIPMENT_TEMPLATES.length)];
-                        gameState.tempSpoils.items.push(randEquip.name);
-                        
-                        let invEquip = gameState.inventory.find(i => i.name === randEquip.name);
-                        if (invEquip) invEquip.count++;
-                        else gameState.inventory.push({ ...randEquip, type: "equipment", count: 1 });
-                    }
-
-                    // 全體上陣且存活參戰角色獲取經驗值
+                    // 參戰全員發放經驗值
                     let activeParty = gameState.heroes.filter(h => (h.row === 'front' || h.row === 'back') && !h.isDead);
                     activeParty.forEach(hero => {
-                        // 角色經驗 (上限 Lv.50)
                         if (hero.level < 50) {
                             hero.exp += targetEnemy.exp;
                             if (hero.exp >= hero.maxExp) {
@@ -584,7 +581,6 @@ function startBattleLoop() {
                             }
                         }
 
-                        // 職業經驗 (上限 Lv.10)
                         if (hero.jobLevel < 10) {
                             hero.jobExp += Math.floor(targetEnemy.exp / 2);
                             if (hero.jobExp >= hero.maxJobExp) {
@@ -604,9 +600,14 @@ function startBattleLoop() {
                         if (gameState.inBossFight) {
                             gameState.inBossFight = false;
                             gameState.waveCount = 0;
-                            log(`🏆 擊殺 Boss 成功！獲得首領寶箱與金幣！`);
+                            log(`🏆 擊殺 Boss 成功！解鎖更高的地下城與商店等級！`);
                             gameState.tempSpoils.gold += 300;
-                            gameState.tempSpoils.items.push("首領寶箱");
+                            
+                            // 解鎖更高階層
+                            let dung = DUNGEONS.find(d => d.id === gameState.activeDungeonId);
+                            if (dung && dung.tier >= gameState.maxTierUnlocked) {
+                                gameState.maxTierUnlocked = dung.tier + 1;
+                            }
                         } else {
                             gameState.waveCount++;
                             if (gameState.waveCount >= 10 && !gameState.bossAvailable) {
@@ -640,7 +641,12 @@ function usePotion(hero, potionId) {
     let invItem = gameState.inventory.find(i => i.id === potionId && i.count > 0);
     if (invItem) {
         invItem.count--;
-        let potData = (typeof SHOP_ITEMS !== 'undefined') ? SHOP_ITEMS.find(s => s.id === potionId) : null;
+        let potData = null;
+        Object.keys(SHOP_ITEMS_BY_TIER).forEach(t => {
+            let found = SHOP_ITEMS_BY_TIER[t].find(s => s.id === potionId);
+            if (found) potData = found;
+        });
+
         let healAmt = potData ? potData.heal : 80;
         let st = getHeroStats(hero);
         hero.hp = Math.min(st.maxHp, hero.hp + healAmt);
@@ -656,7 +662,7 @@ function recruitHero() {
         let nameList = (typeof HERO_NAMES !== 'undefined') ? HERO_NAMES[gender] : ["冒險者"];
         let randomName = nameList[Math.floor(Math.random() * nameList.length)];
         
-        let newHero = createHero(randomName, gender, 'reserve'); // 預設新招募為未上陣
+        let newHero = createHero(randomName, gender, 'reserve');
         if (!gameState.heroes) gameState.heroes = [];
         gameState.heroes.push(newHero);
         log(`🍻 成功招募：${randomName} (${gender === 'male' ? '男 ♂' : '女 ♀'})！`);
@@ -667,7 +673,6 @@ function recruitHero() {
     }
 }
 
-// 循環切換陣營：前衛 -> 後衛 -> 未上陣
 function cycleHeroRow(heroId) {
     let h = gameState.heroes.find(x => x.id === heroId);
     if (h) {
@@ -683,42 +688,98 @@ function cycleHeroRow(heroId) {
     }
 }
 
-// 穿脫裝備
-function equipItem(heroId, slot, itemObj) {
+// 開啟職業管理 Modal
+function openJobModal(heroId) {
+    currentJobModalHeroId = heroId;
     let h = gameState.heroes.find(x => x.id === heroId);
     if (!h) return;
 
-    let jobData = JOBS[h.job];
-    if (itemObj && jobData && jobData.allowedEquip && !jobData.allowedEquip.includes("all") && !jobData.allowedEquip.includes(itemObj.equipType)) {
-        alert(`該職業 (${jobData.name}) 無法裝備此類別物品！`);
-        return;
-    }
+    selectedJobIdForView = h.job;
+    renderJobModalContent();
 
-    if (!h.equippedItems) h.equippedItems = { weapon: null, armor: null, accessory: null };
-    
-    // 卸下舊裝備放回背包
-    if (h.equippedItems[slot]) {
-        let old = h.equippedItems[slot];
-        let invOld = gameState.inventory.find(i => i.name === old.name);
-        if (invOld) invOld.count++;
-        else gameState.inventory.push({ ...old, count: 1 });
-    }
+    let modal = document.getElementById('job-modal');
+    if (modal) modal.style.display = 'flex';
+}
 
-    // 穿上新裝備
-    if (itemObj) {
-        h.equippedItems[slot] = itemObj;
-        let invNew = gameState.inventory.find(i => i.name === itemObj.name);
-        if (invNew) {
-            invNew.count--;
-            if (invNew.count <= 0) gameState.inventory = gameState.inventory.filter(i => i !== invNew);
+function renderJobModalContent() {
+    let h = gameState.heroes.find(x => x.id === currentJobModalHeroId);
+    if (!h) return;
+    let st = getHeroStats(h);
+
+    let rightPanel = document.getElementById('job-right-list');
+    if (!rightPanel) return;
+
+    rightPanel.innerHTML = "";
+    Object.keys(JOBS).forEach(jKey => {
+        let j = JOBS[jKey];
+        let isCurrent = h.job === j.id;
+
+        rightPanel.innerHTML += `
+            <div style="background:#161720; padding:10px; border-radius:6px; border:1px solid var(--panel-border); display:flex; justify-content:space-between; align-items:center;" onclick="selectJobView('${j.id}')">
+                <div>
+                    <strong>${j.name}</strong>
+                    <div style="font-size:11px; color:#aaa;">前置要求: ${JSON.stringify(j.req)}</div>
+                </div>
+                <button class="btn ${isCurrent ? 'btn-success' : 'btn-primary'}" style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">
+                    ${isCurrent ? '當前職業' : '轉職'}
+                </button>
+            </div>
+        `;
+    });
+
+    selectJobView(selectedJobIdForView || h.job);
+}
+
+function selectJobView(jobId) {
+    selectedJobIdForView = jobId;
+    let j = JOBS[jobId];
+    let leftPanel = document.getElementById('job-left-desc');
+    if (!leftPanel || !j) return;
+
+    let skillsHtml = Object.keys(j.unlockSkills).map(lv => {
+        let sk = SKILLS[j.unlockSkills[lv]];
+        return `<div style="margin-top:4px; background:#1e2029; padding:6px; border-radius:4px;">
+            <strong style="color:var(--accent);">[Lv.${lv} 解鎖] ${sk.name}</strong> (${sk.type})
+            <div style="font-size:10px; color:#aaa;">${sk.desc} (CD: ${sk.cd}回合)</div>
+        </div>`;
+    }).join('');
+
+    leftPanel.innerHTML = `
+        <h4>${j.name}</h4>
+        <p style="font-size:12px; color:#aaa;">${j.desc}</p>
+        <h5 style="margin:10px 0 4px 0;">📜 可習得 4 種專屬技能：</h5>
+        ${skillsHtml}
+    `;
+}
+
+function changeHeroJob(heroId, jobId) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (h && typeof JOBS !== 'undefined') {
+        let j = JOBS[jobId];
+        let st = getHeroStats(h);
+        
+        let canReq = true;
+        Object.keys(j.req).forEach(rKey => { if (st[rKey] < j.req[rKey]) canReq = false; });
+
+        if (!canReq) {
+            alert("屬性數值未達標，無法轉職為該職業！");
+            return;
         }
-    } else {
-        h.equippedItems[slot] = null;
-    }
 
-    openHeroModal(heroId, true);
-    renderAll();
-    saveGame();
+        h.job = jobId;
+        h.jobModifiers = j.modifiers || {};
+        checkSkillUnlocks(h);
+        log(`✨ ${h.name} 成功轉職為 ${j.name}！`);
+        renderJobModalContent();
+        renderAll();
+        saveGame();
+    }
+}
+
+function closeJobModal() {
+    currentJobModalHeroId = null;
+    let modal = document.getElementById('job-modal');
+    if (modal) modal.style.display = 'none';
 }
 
 function openHeroModal(heroId, isRefresh = false) {
@@ -736,30 +797,10 @@ function openHeroModal(heroId, isRefresh = false) {
 
         let rowLabel = h.row === 'front' ? '🛡️ 前衛' : (h.row === 'back' ? '🏹 後衛' : '💤 未上陣');
 
-        // 裝備卡片 HTML
-        let eq = h.equippedItems || { weapon: null, armor: null, accessory: null };
-        let equipSlotsHtml = `
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin:10px 0;">
-                <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
-                    <strong>武器:</strong> ${eq.weapon ? eq.weapon.name : '無'}<br>
-                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'weapon')">替換</button>
-                </div>
-                <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
-                    <strong>防具:</strong> ${eq.armor ? eq.armor.name : '無'}<br>
-                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'armor')">替換</button>
-                </div>
-                <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
-                    <strong>飾品:</strong> ${eq.accessory ? eq.accessory.name : '無'}<br>
-                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'accessory')">替換</button>
-                </div>
-            </div>
-        `;
-
         body.innerHTML = `
             <h3>${h.name} (${h.gender === 'female' ? '女 ♀' : '男 ♂'}) ${h.isDead ? '<span style="color:var(--danger);">[💀 死亡]</span>' : ''}</h3>
             <p style="font-size:12px; color:#aaa;">性格: ${traitsHtml}</p>
             
-            <!-- 角色等級與職業等級進度條 -->
             <div style="font-size:12px; margin-top:6px;">
                 <div>角色 Lv.${h.level} / 50 (${h.exp} / ${h.maxExp} EXP)</div>
                 <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, (h.exp/h.maxExp)*100)}%; background:#f1c40f;"></div></div>
@@ -773,9 +814,6 @@ function openHeroModal(heroId, isRefresh = false) {
                 <span style="font-size:13px;">當前位置: <strong>${rowLabel}</strong></span>
                 <button class="btn btn-warning" style="font-size:11px;" onclick="cycleHeroRow('${h.id}')">切換位置</button>
             </div>
-
-            <h4 style="margin:10px 0 5px 0;">🛡️ 穿戴裝備</h4>
-            ${equipSlotsHtml}
 
             <h4 style="margin:10px 0 5px 0;">📊 六維數值與天生資質評分</h4>
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:12px; background:#161720; padding:10px; border-radius:6px;">
@@ -817,44 +855,13 @@ function openHeroModal(heroId, isRefresh = false) {
     if (modal && !isRefresh) modal.style.display = 'flex';
 }
 
-function selectEquipForHero(heroId, slot) {
-    let availableEquips = gameState.inventory.filter(i => i.type === 'equipment' && i.slot === slot && i.count > 0);
-    if (availableEquips.length === 0) {
-        alert(`背包中目前沒有可用的【${slot === 'weapon' ? '武器' : (slot === 'armor' ? '防具' : '飾品')}】！`);
-        return;
-    }
-
-    let equipNames = availableEquips.map((e, idx) => `${idx + 1}. ${e.name} (${e.desc})`).join('\n');
-    let choice = prompt(`請輸入數字選擇裝備 (輸入 0 卸下當前裝備):\n${equipNames}`);
-    
-    if (choice === "0") {
-        equipItem(heroId, slot, null);
-    } else if (choice && parseInt(choice) > 0 && parseInt(choice) <= availableEquips.length) {
-        let chosenItem = availableEquips[parseInt(choice) - 1];
-        equipItem(heroId, slot, chosenItem);
-    }
-}
-
-function toggleSkill(heroId, skId) {
-    let h = gameState.heroes.find(x => x.id === heroId);
-    if (!h) return;
-    if (!h.equippedSkills) h.equippedSkills = [];
-    if (h.equippedSkills.includes(skId)) {
-        h.equippedSkills = h.equippedSkills.filter(s => s !== skId);
-    } else {
-        if (h.equippedSkills.length < 3) h.equippedSkills.push(skId);
-        else alert("最多只能裝配 3 個技能！");
-    }
-    openHeroModal(heroId, true);
-    saveGame();
-}
-
 function closeHeroModal() {
     currentModalHeroId = null;
     let modal = document.getElementById('hero-modal');
     if (modal) modal.style.display = 'none';
 }
 
+// 修正：新增管理職業按鈕
 function renderHeroList() {
     let container = document.getElementById('hero-list');
     if (!container) return;
@@ -880,6 +887,7 @@ function renderHeroList() {
                 <div style="display:flex; gap:6px; margin-top:8px;">
                     <button class="btn btn-warning" style="flex:1; font-size:11px;" onclick="cycleHeroRow('${h.id}')">切換位置</button>
                     <button class="btn btn-primary" style="flex:1; font-size:11px;" onclick="openHeroModal('${h.id}')">管理角色</button>
+                    <button class="btn btn-success" style="flex:1; font-size:11px;" onclick="openJobModal('${h.id}')">管理職業</button>
                 </div>
             </div>
         `;
@@ -893,7 +901,7 @@ function renderInventory() {
     
     let filteredItems = gameState.inventory.filter(item => {
         if (currentInvFilter === 'all') return true;
-        return item.type === currentInvFilter;
+        return item.category === currentInvFilter || item.type === currentInvFilter;
     });
 
     if (filteredItems.length === 0) {
@@ -911,27 +919,55 @@ function renderInventory() {
     });
 }
 
+// 修正：解鎖商店與列表式介面
 function renderShop() {
-    let container = document.getElementById('shop-items');
+    let container = document.getElementById('shop-items-list');
+    let tierBadge = document.getElementById('shop-tier-badge');
     if (!container) return;
+    
+    if (tierBadge) tierBadge.innerText = `(商店等級 ${gameState.maxTierUnlocked || 1})`;
     container.innerHTML = "";
-    if (typeof SHOP_ITEMS !== 'undefined') {
-        SHOP_ITEMS.forEach(s => {
-            container.innerHTML += `
-                <div class="card">
-                    <h4>${s.name}</h4>
-                    <p style="font-size:12px; color:#aaa;">${s.desc}</p>
-                    <p style="color:var(--accent);">價格: ${s.cost} 金幣</p>
+
+    let availableItems = [];
+    for (let t = 1; t <= (gameState.maxTierUnlocked || 1); t++) {
+        if (SHOP_ITEMS_BY_TIER[t]) availableItems = availableItems.concat(SHOP_ITEMS_BY_TIER[t]);
+    }
+
+    let filtered = availableItems.filter(i => {
+        if (currentShopFilter === 'all') return true;
+        return i.category === currentShopFilter;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = "<p style='color:#aaa;'>目前等級的商店沒有該分類的商品。</p>";
+        return;
+    }
+
+    filtered.forEach(s => {
+        container.innerHTML += `
+            <div class="shop-item-row">
+                <div class="shop-item-info">
+                    <div class="shop-item-title">${s.name}</div>
+                    <div class="shop-item-desc">${s.desc}</div>
+                </div>
+                <div class="shop-item-action">
+                    <span class="shop-item-price">🪙 ${s.cost} 金幣</span>
                     <button class="btn btn-primary" onclick="buyShopItem('${s.id}')">購買</button>
                 </div>
-            `;
-        });
-    }
+            </div>
+        `;
+    });
 }
 
 function buyShopItem(id) {
-    if (typeof SHOP_ITEMS === 'undefined') return;
-    let item = SHOP_ITEMS.find(s => s.id === id);
+    let item = null;
+    Object.keys(SHOP_ITEMS_BY_TIER).forEach(t => {
+        let found = SHOP_ITEMS_BY_TIER[t].find(s => s.id === id);
+        if (found) item = found;
+    });
+
+    if (!item) return;
+
     if (gameState.gold >= item.cost) {
         gameState.gold -= item.cost;
         let invItem = gameState.inventory.find(i => i.id === id);
@@ -945,29 +981,70 @@ function buyShopItem(id) {
     }
 }
 
+// 修正：任務接取限制與手動回報
 function renderQuests() {
     let container = document.getElementById('quest-list');
+    let activeCountEl = document.getElementById('active-quest-count');
+    let limitEl = document.getElementById('max-quest-limit');
     if (!container) return;
+
+    let maxLimit = (gameState.maxTierUnlocked || 1) * 2;
+    if (activeCountEl) activeCountEl.innerText = gameState.activeQuests.length;
+    if (limitEl) limitEl.innerText = maxLimit;
+
     container.innerHTML = "";
-    if (!gameState.quests || gameState.quests.length === 0) return;
-    gameState.quests.forEach(q => {
+
+    QUEST_DATABASE.forEach(q => {
+        if (q.tierReq > (gameState.maxTierUnlocked || 1)) return; // 依階層解鎖
+
+        let activeQ = gameState.activeQuests.find(x => x.id === q.id);
+        
+        let actionBtn = '';
+        if (!activeQ) {
+            actionBtn = `<button class="btn btn-primary" onclick="acceptQuest('${q.id}')">接取任務</button>`;
+        } else if (activeQ.completed) {
+            actionBtn = `<button class="btn btn-success" onclick="completeQuest('${q.id}')">回報領賞</button>`;
+        } else {
+            actionBtn = `<button class="btn btn-warning" disabled>進行中 (${activeQ.count}/${activeQ.maxCount})</button>`;
+        }
+
         container.innerHTML += `
-            <div class="card" style="margin-bottom:10px;">
-                <strong>${q.title}</strong> (${q.count}/${q.maxCount})
-                <button class="btn ${q.completed ? 'btn-success' : 'btn-danger'}" ${!q.completed || q.claimed ? 'disabled' : ''} onclick="claimQuest('${q.id}')">
-                    ${q.claimed ? '已領取' : (q.completed ? '領取獎勵' : '未完成')}
-                </button>
+            <div class="shop-item-row" style="margin-bottom:8px;">
+                <div class="shop-item-info">
+                    <div class="shop-item-title">${q.title}</div>
+                    <div class="shop-item-desc">${q.desc} (獎勵: 🪙 ${q.rewardGold} 金幣)</div>
+                </div>
+                <div class="shop-item-action">
+                    ${actionBtn}
+                </div>
             </div>
         `;
     });
 }
 
-function claimQuest(id) {
-    let q = gameState.quests.find(x => x.id === id);
-    if (q && q.completed && !q.claimed) {
-        q.claimed = true;
+function acceptQuest(id) {
+    let maxLimit = (gameState.maxTierUnlocked || 1) * 2;
+    if (gameState.activeQuests.length >= maxLimit) {
+        alert(`目前最多同時接取 ${maxLimit} 個任務！請先完成已接取的任務。`);
+        return;
+    }
+
+    let q = QUEST_DATABASE.find(x => x.id === id);
+    if (q) {
+        gameState.activeQuests.push({ ...q, count: 0, completed: false });
+        log(`📜 接取任務：【${q.title}】`);
+        renderAll();
+        saveGame();
+    }
+}
+
+function completeQuest(id) {
+    let qIdx = gameState.activeQuests.findIndex(x => x.id === id);
+    if (qIdx !== -1) {
+        let q = gameState.activeQuests[qIdx];
         gameState.gold += q.rewardGold;
-        log(`📜 任務獎勵：+${q.rewardGold} 金幣`);
+        log(`📜 完成任務【${q.title}】！獲得 🪙 ${q.rewardGold} 金幣`);
+        gameState.activeQuests.splice(qIdx, 1); // 移出已完成，允許重複接取
         renderAll();
         saveGame();
     }
