@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>萬年騎士團：深淵地下城與自由轉職</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 頂部資訊欄 -->
+    <div class="top-bar">
+        <div>
+            <span id="guild-name" style="font-weight:bold; color:var(--accent);">冒險者公會</span>
+            <span style="font-size: 12px; color: #aaa;">(Lv.<span id="guild-lv">1</span>)</span>
+        </div>
+        <div class="res-container">
+            <span class="res-item">🪙 金幣: <span id="res-gold">0</span></span>
+            <span class="res-item">💎 魔晶石: <span id="res-gems">0</span></span>
+        </div>
+    </div>
+
+    <!-- 頁籤導覽列 -->
+    <div class="nav-bar">
+        <button class="nav-btn active" onclick="switchTab('battle')">⚔️ 討伐戰鬥</button>
+        <button class="nav-btn" onclick="switchTab('heroes')">👥 冒險者</button>
+        <button class="nav-btn" onclick="switchTab('inventory')">🎒 背包倉庫</button>
+        <button class="nav-btn" onclick="switchTab('shop')">🏪 道具商店</button>
+        <button class="nav-btn" onclick="switchTab('forge')">🔨 鐵匠鋪</button>
+        <button class="nav-btn" onclick="switchTab('quests')">📜 任務告示</button>
+        <button class="nav-btn" onclick="switchTab('bestiary')">📖 怪物圖鑑</button>
+    </div>
+
+    <!-- 主內容區域 -->
+    <div class="main-content">
+        <!-- 1. 討伐戰鬥頁籤 -->
+        <div id="tab-battle" class="tab-content active">
+            <div class="battle-header">
+                <div>
+                    <label for="dungeon-select">選擇地下城：</label>
+                    <select id="dungeon-select" onchange="changeDungeon(this.value)"></select>
+                </div>
+                <div class="battle-controls">
+                    <button class="btn btn-warning" id="pause-btn" onclick="togglePause()">⏸️ 暫停休息</button>
+                    <button class="btn btn-danger" onclick="retreat()">🏃 撤退回城</button>
+                </div>
+            </div>
+
+            <!-- 自動喝藥設定 -->
+            <div class="auto-potion-panel">
+                <span>🧪 自動喝藥：當隊員 HP 低於 </span>
+                <input type="number" id="auto-potion-threshold" value="40" min="10" max="90" style="width: 50px; text-align: center;"> % 時，使用
+                <select id="auto-potion-type">
+                    <option value="pot_small">小型回復藥水</option>
+                    <option value="pot_medium">濃縮回復藥水</option>
+                    <option value="pot_large">高級急救藥水</option>
+                </select>
+                <span style="font-size:12px; color:#aaa;">（需背包有儲備）</span>
+            </div>
+
+            <!-- 戰鬥視圖 (敵我動態血條) -->
+            <div class="battle-view">
+                <div class="battle-column">
+                    <h4 style="margin:0 0 10px 0; color:var(--accent);">🛡️ 我方隊伍</h4>
+                    <div id="player-party-list"></div>
+                </div>
+                <div class="battle-column">
+                    <h4 style="margin:0 0 10px 0; color:#ff6b6b;">⚔️ 當前敵人 <span id="wave-counter" style="font-size:12px; color:#aaa;">(0/10)</span></h4>
+                    <div id="enemy-list"></div>
+                    <button id="boss-btn" class="boss-trigger-btn" onclick="triggerBossFight()">🔥 挑戰本層 Boss！ 🔥</button>
+                </div>
+            </div>
+
+            <!-- 戰鬥日誌與戰利品 -->
+            <div class="battle-log" id="battle-log">
+                <div>[系統] 準備就緒，請展開討伐！</div>
+            </div>
+            <div class="loot-bar">
+                <strong>📦 最近戰利品結算：</strong> <span id="loot-display">尚無戰利品</span>
+            </div>
+        </div>
+
+        <!-- 2. 冒險者頁籤 -->
+        <div id="tab-heroes" class="tab-content">
+            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                <h3>公會冒險者列表</h3>
+                <button class="btn btn-success" onclick="recruitHero()">🍺 招募新冒險者 (100金幣)</button>
+            </div>
+            <div class="hero-grid" id="hero-list"></div>
+        </div>
+
+        <!-- 3. 背包倉庫頁籤 -->
+        <div id="tab-inventory" class="tab-content">
+            <h3>🎒 道具與裝備倉庫</h3>
+            <div class="sub-nav">
+                <button class="sub-btn active" onclick="filterInv('all')">全部</button>
+                <button class="sub-btn" onclick="filterInv('weapon')">武器</button>
+                <button class="sub-btn" onclick="filterInv('offhand')">副手</button>
+                <button class="sub-btn" onclick="filterInv('helmet')">頭盔</button>
+                <button class="sub-btn" onclick="filterInv('body')">身體</button>
+                <button class="sub-btn" onclick="filterInv('shoes')">鞋子</button>
+                <button class="sub-btn" onclick="filterInv('necklace')">項鍊</button>
+                <button class="sub-btn" onclick="filterInv('ring')">戒指</button>
+                <button class="sub-btn" onclick="filterInv('material')">素材與消耗品</button>
+            </div>
+            <div class="inv-grid" id="inventory-grid"></div>
+        </div>
+
+        <!-- 4. 道具商店頁籤 -->
+        <div id="tab-shop" class="tab-content">
+            <h3>🏪 雜貨與藥水商店</h3>
+            <div class="shop-grid" id="shop-items"></div>
+        </div>
+
+        <!-- 5. 鐵匠鋪頁籤 -->
+        <div id="tab-forge" class="tab-content">
+            <h3>🔨 鐵匠鋪 (裝備打造與強化)</h3>
+            <div class="forge-container">
+                <div style="flex:1;">
+                    <h4>🛠️ 裝備鍛造配方</h4>
+                    <div id="recipe-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. 任務告示板頁籤 -->
+        <div id="tab-quests" class="tab-content">
+            <h3>📜 公會討伐任務告示板</h3>
+            <p style="font-size:12px; color:#aaa;">提示：接取任務後討伐指定怪物，完成後需返回城鎮交任務獲得獎勵。</p>
+            <div id="quest-list"></div>
+        </div>
+
+        <!-- 7. 怪物圖鑑頁籤 -->
+        <div id="tab-bestiary" class="tab-content">
+            <h3>📖 討伐怪物圖鑑</h3>
+            <div id="bestiary-list" class="hero-grid"></div>
+        </div>
+    </div>
+
+    <!-- 角色詳情 Modal 彈窗 -->
+    <div id="hero-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeHeroModal()">&times;</span>
+            <div id="modal-hero-body"></div>
+        </div>
+    </div>
+
+    <!-- 引入數據庫與邏輯腳本 -->
+    <script src="data.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
