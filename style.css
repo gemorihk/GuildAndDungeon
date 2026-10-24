@@ -77,9 +77,8 @@ body {
     display: block;
 }
 
-/* 按鈕風格 */
 .btn {
-    padding: 8px 14px;
+    padding: 8px 12px;
     border-radius: 4px;
     border: none;
     font-weight: bold;
@@ -92,7 +91,6 @@ body {
 .btn-warning { background: #f1c40f; color: #2c3e50; }
 .btn-danger { background: var(--danger); color: #fff; }
 
-/* 戰鬥模組排版 */
 .battle-header {
     display: flex;
     justify-content: space-between;
@@ -139,15 +137,14 @@ body {
 }
 
 .bar-container {
-    height: 10px;
+    height: 8px;
     background: #000;
-    border-radius: 5px;
+    border-radius: 4px;
     overflow: hidden;
     margin-top: 4px;
 }
 
 .hp-bar { height: 100%; background: var(--hp-color); transition: width 0.3s; }
-.mp-bar { height: 100%; background: var(--mp-color); transition: width 0.3s; }
 
 .battle-log {
     height: 120px;
@@ -168,10 +165,9 @@ body {
     font-size: 13px;
 }
 
-/* 網格卡片 */
-.hero-grid, .inv-grid, .shop-grid {
+.hero-grid, .inv-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 12px;
 }
 
@@ -180,6 +176,50 @@ body {
     border: 1px solid var(--panel-border);
     border-radius: 6px;
     padding: 12px;
+}
+
+/* 商店列表式設計 */
+.shop-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.shop-item-row {
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 10px 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.shop-item-info {
+    flex: 1;
+}
+
+.shop-item-title {
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.shop-item-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.shop-item-action {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.shop-item-price {
+    color: var(--accent);
+    font-weight: bold;
+    font-size: 13px;
 }
 
 .sub-nav {
@@ -203,7 +243,6 @@ body {
     color: #fff;
 }
 
-/* Modal 彈窗與子頁籤 */
 .modal {
     display: none;
     position: fixed;
@@ -216,8 +255,8 @@ body {
 
 .modal-content {
     background: var(--panel-bg);
-    width: 90%;
-    max-width: 600px;
+    width: 92%;
+    max-width: 650px;
     max-height: 85vh;
     overflow-y: auto;
     border-radius: 8px;
@@ -234,26 +273,29 @@ body {
     color: var(--text-muted);
 }
 
-.modal-tab-header {
+/* 雙欄職業選擇視窗 */
+.job-modal-layout {
     display: flex;
-    gap: 10px;
-    border-bottom: 1px solid var(--panel-border);
-    padding-bottom: 8px;
+    gap: 12px;
 }
 
-.modal-tab-btn {
-    background: #161821;
-    border: none;
-    color: var(--text-muted);
-    padding: 6px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
+@media (max-width: 600px) {
+    .job-modal-layout { flex-direction: column; }
 }
 
-.modal-tab-btn.active {
-    background: var(--accent);
-    color: #fff;
+.job-left-panel {
+    flex: 1;
+    background: #161720;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid var(--panel-border);
+}
+
+.job-right-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .boss-trigger-btn {
@@ -267,11 +309,4 @@ body {
     border-radius: 4px;
     cursor: pointer;
     margin-top: 10px;
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.02); }
-    100% { transform: scale(1); }
 }
