@@ -17,55 +17,102 @@ const TRAITS = [
 const GROWTH_GRADES = ["E", "D", "C", "B", "A", "S", "SS", "SSS"];
 const GRADE_VALUES = { "E": 0.8, "D": 1.0, "C": 1.3, "B": 1.7, "A": 2.2, "S": 2.8, "SS": 3.5, "SSS": 4.5 };
 
-const JOBS = {
-    novice: { id: "novice", name: "0階 無業遊民", tier: 0, req: {}, modifiers: { str: 0, con: 0, mnd: 0, dex: 0, agi: 0, luk: 0 }, skills: [] },
-    warrior: { id: "warrior", name: "戰士", tier: 1, req: { str: 15 }, modifiers: { str: 6, con: 4, atk: 12 }, skills: ["bash"] },
-    knight: { id: "knight", name: "騎士", tier: 1, req: { con: 15 }, modifiers: { con: 8, def: 10 }, skills: ["taunt"] },
-    archer: { id: "archer", name: "弓箭手", tier: 1, req: { dex: 15 }, modifiers: { dex: 6, agi: 4 }, skills: ["power_shot"] },
-    thief: { id: "thief", name: "小偷", tier: 1, req: { luk: 15, agi: 12 }, modifiers: { agi: 6, luk: 6 }, skills: ["steal"] },
-    apprentice: { id: "apprentice", name: "魔法學徒", tier: 1, req: { mnd: 15 }, modifiers: { mnd: 8, matk: 15 }, skills: ["firebolt"] },
-    acolyte: { id: "acolyte", name: "僧侶", tier: 1, req: { con: 10, mnd: 10 }, modifiers: { con: 4, mnd: 4 }, skills: ["heal"] },
-    berserker: { id: "berserker", name: "狂戰士", tier: 2, req: { str: 30, con: 20 }, modifiers: { str: 15, con: 10, atk: 30 }, skills: ["whirlwind"] },
-    paladin: { id: "paladin", name: "聖騎士", tier: 2, req: { con: 30, mnd: 20 }, modifiers: { con: 15, mnd: 10, def: 25 }, skills: ["holy_shield"] },
-    mage: { id: "mage", name: "大魔法師", tier: 2, req: { mnd: 35 }, modifiers: { mnd: 20, matk: 40 }, skills: ["chain_lightning"] },
-    priest: { id: "priest", name: "祭司", tier: 2, req: { mnd: 25, con: 25 }, modifiers: { mnd: 12, con: 12 }, skills: ["group_heal"] }
-};
-
+// 技能資料庫 (含類型、CD、威力與基礎解鎖說明)
 const SKILLS = {
+    // 無業遊民技能
+    tackle: { id: "tackle", name: "撞擊", type: "attack", cd: 2, power: 1.2, desc: "造成 120% 基礎傷害" },
+    stone_throw: { id: "stone_throw", name: "投石", type: "attack", cd: 3, power: 1.3, desc: "造成 130% 遠程傷害" },
+    first_aid: { id: "first_aid", name: "包紮", type: "heal", cd: 5, power: 1.2, desc: "恢復少量生命值" },
+    focus: { id: "focus", name: "凝神", type: "buff", cd: 6, power: 0, desc: "提升下次攻擊命中與暴擊" },
+
+    // 戰士技能 (Lv.1, Lv.3, Lv.6, Lv.10)
     bash: { id: "bash", name: "重擊", type: "attack", cd: 2, power: 1.6, desc: "造成 160% 物理傷害" },
-    taunt: { id: "taunt", name: "挑釁", type: "buff", cd: 4, power: 0, desc: "吸引敵人注意力並增加防禦" },
+    defend: { id: "defend", name: "防禦姿態", type: "buff", cd: 4, power: 0, desc: "提升自身 30% 防禦力" },
+    cleave: { id: "cleave", name: "順勢斬", type: "attack", cd: 3, power: 2.0, desc: "造成 200% 強力物理傷害" },
+    war_cry: { id: "war_cry", name: "戰吼", type: "buff", cd: 6, power: 0, desc: "提升全隊 20% 攻擊力" },
+
+    // 弓箭手技能
     power_shot: { id: "power_shot", name: "強力射擊", type: "attack", cd: 3, power: 1.8, desc: "造成 180% 精準傷害" },
-    steal: { id: "steal", name: "偷竊", type: "attack", cd: 5, power: 1.1, desc: "攻擊並額外獲取金幣" },
+    rapid_fire: { id: "rapid_fire", name: "連射", type: "attack", cd: 3, power: 2.2, desc: "快速發射兩箭" },
+    poison_arrow: { id: "poison_arrow", name: "毒箭", type: "attack", cd: 4, power: 1.5, desc: "造成傷害並使敵人中毒" },
+    snipe: { id: "snipe", name: "狙擊", type: "attack", cd: 5, power: 3.2, desc: "造成 320% 超高物理傷害" },
+
+    // 魔法學徒技能
     firebolt: { id: "firebolt", name: "火彈術", type: "attack", cd: 2, power: 1.9, desc: "造成 190% 魔法傷害" },
-    heal: { id: "heal", name: "治癒術", type: "heal", cd: 4, power: 2.2, desc: "恢復友方大量生命值" },
-    whirlwind: { id: "whirlwind", name: "旋風斬", type: "attack", cd: 3, power: 2.4, desc: "造成 240% 強力物理傷害" },
-    holy_shield: { id: "holy_shield", name: "聖光盾", type: "buff", cd: 6, power: 0, desc: "大幅提升防禦力與格擋" },
-    chain_lightning: { id: "chain_lightning", name: "閃電鏈", type: "attack", cd: 4, power: 2.8, desc: "造成 280% 高額魔法傷害" },
-    group_heal: { id: "group_heal", name: "群體治癒", type: "heal", cd: 7, power: 2.0, desc: "恢復全隊生命值" }
+    ice_spike: { id: "ice_spike", name: "冰錐術", type: "attack", cd: 3, power: 2.1, desc: "造成 210% 水屬性傷害" },
+    magic_barrier: { id: "magic_barrier", name: "魔力護盾", type: "buff", cd: 5, power: 0, desc: "吸收傷害護盾" },
+    fireball: { id: "fireball", name: "大火球術", type: "attack", cd: 4, power: 3.0, desc: "造成 300% 爆炸魔法傷害" }
 };
 
-// 大幅上調敵人實力與平衡金幣產出
+// 職業資料 (設定限制裝備與 Lv.1, 3, 6, 10 技能解鎖鏈)
+const JOBS = {
+    novice: {
+        id: "novice", name: "0階 無業遊民", tier: 0, req: {},
+        allowedEquip: ["all"],
+        modifiers: { str: 0, con: 0, mnd: 0, dex: 0, agi: 0, luk: 0 },
+        unlockSkills: { 1: "tackle", 3: "stone_throw", 6: "first_aid", 10: "focus" }
+    },
+    warrior: {
+        id: "warrior", name: "戰士", tier: 1, req: { str: 15 },
+        allowedEquip: ["sword", "axe", "heavy_armor", "shield"],
+        modifiers: { str: 8, con: 6, atk: 15 },
+        unlockSkills: { 1: "bash", 3: "defend", 6: "cleave", 10: "war_cry" }
+    },
+    archer: {
+        id: "archer", name: "弓箭手", tier: 1, req: { dex: 15 },
+        allowedEquip: ["bow", "light_armor"],
+        modifiers: { dex: 8, agi: 6, atk: 12 },
+        unlockSkills: { 1: "power_shot", 3: "rapid_fire", 6: "poison_arrow", 10: "snipe" }
+    },
+    apprentice: {
+        id: "apprentice", name: "魔法學徒", tier: 1, req: { mnd: 15 },
+        allowedEquip: ["staff", "robe"],
+        modifiers: { mnd: 10, matk: 20 },
+        unlockSkills: { 1: "firebolt", 3: "ice_spike", 6: "magic_barrier", 10: "fireball" }
+    }
+};
+
+// 裝備範本數據
+const EQUIPMENT_TEMPLATES = [
+    { id: "iron_sword", name: "鐵劍", type: "weapon", equipType: "sword", atk: 15, desc: "基礎戰士長劍" },
+    { id: "wooden_bow", name: "獵弓", type: "weapon", equipType: "bow", atk: 12, dex: 5, desc: "輕巧的木弓" },
+    { id: "apprentice_staff", name: "學徒短杖", type: "weapon", equipType: "staff", matk: 18, mnd: 4, desc: "帶有微弱魔力的木杖" },
+    { id: "iron_armor", name: "鐵甲", type: "armor", equipType: "heavy_armor", def: 12, con: 5, desc: "笨重但堅固的重甲" },
+    { id: "leather_vest", name: "皮甲", type: "armor", equipType: "light_armor", def: 6, agi: 4, desc: "輕盈靈便的皮質防具" },
+    { id: "mage_robe", name: "法師長袍", type: "armor", equipType: "robe", def: 4, mnd: 6, desc: "編織魔力絲線的長袍" },
+    { id: "bronze_ring", name: "青銅戒指", type: "accessory", equipType: "ring", hp: 30, desc: "微幅增加生命值的飾品" }
+];
+
+// 新增第 2 層與第 3 層地下城
 const DUNGEONS = [
     {
-        id: "goblin_cave", name: "哥布林洞窟 [地]", element: "earth", reqLv: 1,
+        id: "goblin_cave", name: "第 1 層：哥布林洞窟 [地] (Lv.1+)", element: "earth", reqLv: 1,
         mobs: [
-            { id: "goblin", name: "哥布林戰士", hp: 350, atk: 48, def: 15, exp: 25, gold: 12, type: "melee" },
-            { id: "goblin_archer", name: "哥布林弓手", hp: 280, atk: 58, def: 10, exp: 30, gold: 15, type: "ranged" }
+            { id: "goblin", name: "哥布林戰士", hp: 320, atk: 45, def: 12, exp: 30, gold: 15, type: "melee" },
+            { id: "goblin_archer", name: "哥布林弓手", hp: 250, atk: 55, def: 8, exp: 35, gold: 18, type: "ranged" }
         ],
-        boss: { id: "goblin_king", name: "哥布林萬人王 [Boss]", hp: 2800, atk: 130, def: 40, exp: 250, gold: 150, type: "melee" }
+        boss: { id: "goblin_king", name: "哥布林萬人王 [Boss]", hp: 2500, atk: 120, def: 35, exp: 300, gold: 200, type: "melee" }
     },
     {
-        id: "mist_forest", name: "迷霧森林 [風]", element: "wind", reqLv: 5,
+        id: "skeleton_crypt", name: "第 2 層：地下骷髏墓穴 [暗] (Lv.3+)", element: "dark", reqLv: 3,
         mobs: [
-            { id: "wind_wolf", name: "疾風魔狼", hp: 650, atk: 90, def: 28, exp: 50, gold: 25, type: "melee" },
-            { id: "treant", name: "樹精守衛", hp: 950, atk: 75, def: 48, exp: 60, gold: 30, type: "melee" }
+            { id: "skeleton_warrior", name: "骷髏劍士", hp: 650, atk: 85, def: 25, exp: 60, gold: 35, type: "melee" },
+            { id: "skeleton_mage", name: "亡靈法師", hp: 480, atk: 110, def: 15, exp: 75, gold: 45, type: "ranged" }
         ],
-        boss: { id: "forest_dragon", name: "翡翠毒龍 [Boss]", hp: 6000, atk: 220, def: 75, exp: 600, gold: 350, type: "ranged" }
+        boss: { id: "lich_king", name: "死靈領主 [Boss]", hp: 5500, atk: 220, def: 60, exp: 800, gold: 500, type: "ranged" }
+    },
+    {
+        id: "lava_volcano", name: "第 3 層：熾熱熔岩火山 [火] (Lv.5+)", element: "fire", reqLv: 5,
+        mobs: [
+            { id: "fire_elemental", name: "熔岩火靈", hp: 1200, atk: 160, def: 40, exp: 120, gold: 70, type: "ranged" },
+            { id: "magma_golem", name: "岩漿巨石人", hp: 2200, atk: 140, def: 90, exp: 150, gold: 90, type: "melee" }
+        ],
+        boss: { id: "flame_dragon", name: "滅世赤龍 [Boss]", hp: 12000, atk: 380, def: 120, exp: 2000, gold: 1200, type: "melee" }
     }
 ];
 
 const SHOP_ITEMS = [
     { id: "pot_small", name: "小型回復藥水", type: "potion", heal: 80, cost: 35, desc: "恢復 80 點 HP" },
     { id: "pot_medium", name: "濃縮回復藥水", type: "potion", heal: 250, cost: 100, desc: "恢復 250 點 HP" },
-    { id: "pot_large", name: "高級急救藥水", type: "potion", heal: 700, cost: 280, desc: "恢復 700 點 HP" }
+    { id: "pot_large", name: "高級急救藥水", type: "potion", heal: 700, cost: 280, desc: "恢復 280 點 HP" }
 ];
