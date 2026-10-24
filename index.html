@@ -49,8 +49,8 @@
                 <span>🧪 自動喝藥：當隊員 HP 低於 </span>
                 <input type="number" id="auto-potion-threshold" value="40" min="10" max="90" style="width: 50px; text-align: center;"> % 時，使用
                 <select id="auto-potion-type">
-                    <option value="pot_small">小型回復藥水 (80HP)</option>
-                    <option value="pot_medium">濃縮回復藥水 (250HP)</option>
+                    <option value="pot_small">初級回復藥水 (80HP)</option>
+                    <option value="pot_medium">中級回復藥水 (250HP)</option>
                     <option value="pot_large">高級急救藥水 (700HP)</option>
                 </select>
             </div>
@@ -92,7 +92,7 @@
             <div class="hero-grid" id="hero-list"></div>
         </div>
 
-        <!-- 3. 背包倉庫 (新增子分頁) -->
+        <!-- 3. 背包倉庫 -->
         <div id="tab-inventory" class="tab-content">
             <h3>🎒 道具與裝備倉庫</h3>
             <div class="sub-nav">
@@ -104,10 +104,17 @@
             <div class="inv-grid" id="inventory-grid"></div>
         </div>
 
-        <!-- 4. 道具商店 -->
+        <!-- 4. 道具商店 (列表式排版) -->
         <div id="tab-shop" class="tab-content">
-            <h3>🏪 雜貨與藥水商店</h3>
-            <div class="shop-grid" id="shop-items"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h3 style="margin:0;">🏪 道具商店 <span id="shop-tier-badge" style="font-size:12px; color:var(--accent);">(商店等級 1)</span></h3>
+            </div>
+            <div class="sub-nav">
+                <button class="sub-btn active" onclick="filterShop('all', this)">全部道具</button>
+                <button class="sub-btn" onclick="filterShop('potion', this)">藥水/消耗品</button>
+                <button class="sub-btn" onclick="filterShop('equipment', this)">裝備</button>
+            </div>
+            <div class="shop-list-container" id="shop-items-list"></div>
         </div>
 
         <!-- 5. 鐵匠鋪 -->
@@ -116,9 +123,12 @@
             <p style="color:#aaa;">敬請期待！</p>
         </div>
 
-        <!-- 6. 任務告示板 -->
+        <!-- 6. 任務告示板 (手動接取與限額) -->
         <div id="tab-quests" class="tab-content">
-            <h3>📜 公會討伐任務告示板</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h3 style="margin:0;">📜 公會討伐任務告示板</h3>
+                <span style="font-size:12px; color:var(--accent);">已接取任務：<span id="active-quest-count">0</span> / <span id="max-quest-limit">2</span></span>
+            </div>
             <div id="quest-list"></div>
         </div>
 
@@ -135,9 +145,23 @@
             <span class="close-modal" onclick="closeHeroModal()">&times;</span>
             <div class="modal-tab-header">
                 <button class="modal-tab-btn active" onclick="switchModalTab('stats', this)">📊 屬性與資質</button>
-                <button class="modal-tab-btn" onclick="switchModalTab('skills', this)">⚔️ 技能與裝備</button>
+                <button class="modal-tab-btn" onclick="switchModalTab('skills', this)">⚔️ 技能與熟練度</button>
             </div>
             <div id="modal-hero-body" style="margin-top: 15px;"></div>
+        </div>
+    </div>
+
+    <!-- 雙欄職業選擇彈窗 -->
+    <div id="job-modal" class="modal">
+        <div class="modal-content" style="max-width: 750px;">
+            <span class="close-modal" onclick="closeJobModal()">&times;</span>
+            <h3 style="margin-top:0;">轉職與職業管理</h3>
+            <div class="job-modal-layout">
+                <div class="job-left-panel" id="job-left-desc">
+                    <p style="color:#aaa;">請點擊右側職業列表查看描述與技能。</p>
+                </div>
+                <div class="job-right-panel" id="job-right-list"></div>
+            </div>
         </div>
     </div>
 
