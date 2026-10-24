@@ -7,7 +7,7 @@
     --text-main: #e0e0e0;
     --text-muted: #8a8d9b;
     --hp-color: #2ecc71;
-    --mp-color: #3498db;
+    --atb-color: #3498db;
     --danger: #e74c3c;
 }
 
@@ -137,14 +137,15 @@ body {
 }
 
 .bar-container {
-    height: 8px;
+    height: 7px;
     background: #000;
     border-radius: 4px;
     overflow: hidden;
     margin-top: 4px;
 }
 
-.hp-bar { height: 100%; background: var(--hp-color); transition: width 0.3s; }
+.hp-bar { height: 100%; background: var(--hp-color); transition: width 0.2s; }
+.atb-bar { height: 100%; background: var(--atb-color); transition: width 0.1s linear; }
 
 .battle-log {
     height: 120px;
@@ -165,7 +166,7 @@ body {
     font-size: 13px;
 }
 
-.hero-grid, .inv-grid {
+.hero-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 12px;
@@ -178,7 +179,7 @@ body {
     padding: 12px;
 }
 
-/* 商店列表式設計 */
+/* 商店與背包列表風格 */
 .shop-list-container {
     display: flex;
     flex-direction: column;
@@ -273,7 +274,6 @@ body {
     color: var(--text-muted);
 }
 
-/* 雙欄職業選擇視窗 */
 .job-modal-layout {
     display: flex;
     gap: 12px;
