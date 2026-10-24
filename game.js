@@ -22,13 +22,17 @@ let gameState = {
 // 初始化遊戲
 window.onload = function() {
     loadGame(); // 嘗試讀取本地存檔
+    
+    // 如果存檔裡沒有角色，自動建立初始主人公
     if (!gameState.heroes || gameState.heroes.length === 0) {
         gameState.heroes = [];
         initDefaultHeroes();
+        saveGame();
     }
+    
     renderAll();
     startBattleLoop();
-    startAutoSave(); // 啟動自動存檔
+    startAutoSave();
 };
 
 // 創立冒險者 (標準化數據結構)
@@ -49,20 +53,21 @@ function createHero(name, stats) {
         mp: 30,
         equip: { weapon: null, offhand: null, helmet: null, body: null, shoes: null, necklace: null, ring: null }
     };
-    // 算出一開始的血量最大值並補滿
     let st = getHeroStats(hero);
     hero.hp = st.maxHp;
     hero.mp = st.maxMp;
     return hero;
 }
 
-// 創立初始冒險者 (從0階無業遊民開始)
+// 預設主人公與初始同伴
 function initDefaultHeroes() {
-    gameState.heroes.push(createHero("亞瑟", { str: 12, con: 12, mnd: 8, dex: 10, agi: 10, luk: 8 }));
-    gameState.heroes.push(createHero("莉莉絲", { str: 6, con: 8, mnd: 14, dex: 10, agi: 10, luk: 10 }));
+    // 主角：亞瑟 (全能力平衡)
+    gameState.heroes.push(createHero("亞瑟 (主人公)", { str: 12, con: 12, mnd: 10, dex: 10, agi: 10, luk: 10 }));
+    // 同伴：莉莉絲
+    gameState.heroes.push(createHero("莉莉絲", { str: 8, con: 8, mnd: 14, dex: 10, agi: 10, luk: 10 }));
 }
 
-// 屬性計算與衍生數值 (包含體質計算 HP/s)
+// 屬性計算與衍生數值
 function getHeroStats(hero) {
     let s = { ...hero.baseStats };
     let maxHp = s.con * 12 + s.str * 3 + hero.level * 10;
@@ -76,7 +81,7 @@ function getHeroStats(hero) {
     return { maxHp, maxMp, hpRegen, atk, matk, def, spd, ...s };
 }
 
-// ==================== 本地存檔與讀檔系統 (LocalStorage) ====================
+// ==================== 本地存檔系統 ====================
 function saveGame() {
     try {
         localStorage.setItem('guild_and_dungeon_save', JSON.stringify(gameState));
@@ -89,10 +94,18 @@ function saveGame() {
 
 function manualSaveGame() {
     if (saveGame()) {
-        log("💾 遊戲進度已成功手動儲存！");
+        log("💾 遊戲進度已手動儲存！");
         alert("遊戲已成功手動存檔！");
     } else {
-        alert("存檔失敗，請檢查瀏覽器儲存空間。");
+        alert("存檔失敗。");
+    }
+}
+
+// 清除壞存檔按鈕（除錯用）
+function resetSaveData() {
+    if (confirm("確定要重置所有遊戲資料並重新開始嗎？")) {
+        localStorage.removeItem('guild_and_dungeon_save');
+        location.reload();
     }
 }
 
@@ -101,8 +114,10 @@ function loadGame() {
         let savedData = localStorage.getItem('guild_and_dungeon_save');
         if (savedData) {
             let parsed = JSON.parse(savedData);
-            gameState = { ...gameState, ...parsed };
-            log("📂 已成功載入上次的遊戲進度！");
+            if (parsed.heroes && parsed.heroes.length > 0) {
+                gameState = { ...gameState, ...parsed };
+                log("📂 已成功載入遊戲進度！");
+            }
         }
     } catch (e) {
         console.error("讀取存檔失敗", e);
@@ -114,7 +129,7 @@ function startAutoSave() {
         saveGame();
     }, 30000);
 }
-// =========================================================================
+// =======================================================
 
 // 頁籤切換
 function switchTab(tabId) {
@@ -146,7 +161,7 @@ function renderAll() {
     renderBestiary();
 }
 
-// 討伐下拉可選項
+// 討伐下拉選單
 function renderDungeonSelect() {
     let select = document.getElementById('dungeon-select');
     if (!select) return;
@@ -170,18 +185,25 @@ function changeDungeon(id) {
     renderAll();
 }
 
-// 戰鬥視圖渲染
+// 隊伍視圖渲染
 function renderPartyView() {
     let container = document.getElementById('player-party-list');
     if (!container) return;
     container.innerHTML = "";
+    
+    if (!gameState.heroes || gameState.heroes.length === 0) {
+        container.innerHTML = "<p style='font-size:12px; color:#aaa;'>尚未招募冒險者</p>";
+        return;
+    }
+
     gameState.heroes.forEach(h => {
         let st = getHeroStats(h);
+        let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
         container.innerHTML += `
             <div class="entity-card">
                 <div style="display:flex; justify-content:space-between;">
                     <strong>${h.name}</strong> 
-                    <span style="font-size:12px; color:var(--accent);">${JOBS[h.job] ? JOBS[h.job].name : '無業遊民'} Lv.${h.level}</span>
+                    <span style="font-size:12px; color:var(--accent);">${jobName} Lv.${h.level}</span>
                 </div>
                 <div style="font-size:12px; margin-top:2px;">
                     HP: ${Math.max(0, Math.floor(h.hp))}/${st.maxHp} (+${st.hpRegen}/s)
@@ -222,8 +244,8 @@ function renderEnemiesView() {
     }
 }
 
-// 產生怪物波次
 function spawnWave() {
+    if (typeof DUNGEONS === 'undefined') return;
     let dung = DUNGEONS.find(d => d.id === gameState.activeDungeonId);
     if (!dung) return;
     let mobTemplate = dung.mobs[Math.floor(Math.random() * dung.mobs.length)];
@@ -238,8 +260,8 @@ function spawnWave() {
     }
 }
 
-// 觸發 Boss 戰
 function triggerBossFight() {
+    if (typeof DUNGEONS === 'undefined') return;
     let dung = DUNGEONS.find(d => d.id === gameState.activeDungeonId);
     if (!dung) return;
     gameState.inBossFight = true;
@@ -253,7 +275,7 @@ function triggerBossFight() {
     renderAll();
 }
 
-// 自動戰鬥與自然恢復主迴圈 (每秒執行)
+// 自動戰鬥與自然恢復主迴圈
 function startBattleLoop() {
     setInterval(() => {
         if (gameState.isPaused) return;
@@ -263,7 +285,6 @@ function startBattleLoop() {
         let threshold = thresholdEl ? parseInt(thresholdEl.value) || 40 : 40;
         let potionType = potionTypeEl ? potionTypeEl.value : 'pot_small';
 
-        // 1. 自然恢復與自動喝藥
         gameState.heroes.forEach(h => {
             let st = getHeroStats(h);
             if (h.hp > 0 && h.hp < st.maxHp) {
@@ -274,7 +295,6 @@ function startBattleLoop() {
             }
         });
 
-        // 2. 回合交鋒
         if (gameState.currentEnemies.length > 0) {
             let activeHero = gameState.heroes.find(h => h.hp > 0);
             let activeEnemy = gameState.currentEnemies[0];
@@ -335,22 +355,21 @@ function startBattleLoop() {
     }, 1000);
 }
 
-// 喝藥機制
 function usePotion(hero, potionId) {
     let item = gameState.inventory.find(i => i.id === potionId && i.count > 0);
     if (item) {
         item.count--;
-        let potData = SHOP_ITEMS.find(s => s.id === potionId);
+        let potData = (typeof SHOP_ITEMS !== 'undefined') ? SHOP_ITEMS.find(s => s.id === potionId) : null;
+        let healAmt = potData ? potData.heal : 80;
         let st = getHeroStats(hero);
-        hero.hp = Math.min(st.maxHp, hero.hp + potData.heal);
-        log(`🧪 ${hero.name} 使用了 ${potData.name}，恢復 ${potData.heal} HP`);
+        hero.hp = Math.min(st.maxHp, hero.hp + healAmt);
+        log(`🧪 ${hero.name} 使用了藥水，恢復 ${healAmt} HP`);
         if (item.count <= 0) {
             gameState.inventory = gameState.inventory.filter(i => i !== item);
         }
     }
 }
 
-// 暫停與撤退
 function togglePause() {
     gameState.isPaused = !gameState.isPaused;
     let btn = document.getElementById('pause-btn');
@@ -373,14 +392,12 @@ function retreat() {
     renderAll();
 }
 
-// 修正後的「招募冒險者」核心函式
 function recruitHero() {
     if (gameState.gold >= 100) {
         gameState.gold -= 100;
         let names = ["洛克", "卡爾", "艾莉亞", "席娜", "格雷", "克里斯", "海倫娜", "艾倫"];
         let randomName = names[Math.floor(Math.random() * names.length)];
         
-        // 隨機初始屬性
         let newHero = createHero(randomName, { 
             str: 8 + Math.floor(Math.random()*5), 
             con: 8 + Math.floor(Math.random()*5), 
@@ -393,7 +410,6 @@ function recruitHero() {
         gameState.heroes.push(newHero);
         log(`🍻 成功招募了新冒險者 ${randomName}！`);
         
-        // 立即觸發全介面重新繪製與存檔
         renderAll();
         saveGame();
     } else {
@@ -401,17 +417,17 @@ function recruitHero() {
     }
 }
 
-// 渲染冒險者列表
 function renderHeroList() {
     let container = document.getElementById('hero-list');
     if (!container) return;
     container.innerHTML = "";
     gameState.heroes.forEach(h => {
         let st = getHeroStats(h);
+        let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
         container.innerHTML += `
             <div class="card">
                 <h4>${h.name}</h4>
-                <p style="font-size:12px; color:var(--accent);">${JOBS[h.job] ? JOBS[h.job].name : '無業遊民'} (Lv.${h.level})</p>
+                <p style="font-size:12px; color:var(--accent);">${jobName} (Lv.${h.level})</p>
                 <p style="font-size:12px;">STR: ${st.str} | CON: ${st.con} | MND: ${st.mnd}</p>
                 <p style="font-size:12px;">DEX: ${st.dex} | AGI: ${st.agi} | LUK: ${st.luk}</p>
                 <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="openHeroModal('${h.id}')">查看詳情 / 轉職</button>
@@ -428,25 +444,28 @@ function openHeroModal(heroId) {
     if (!body) return;
     
     let jobOptionsHtml = "";
-    Object.keys(JOBS).forEach(jKey => {
-        let j = JOBS[jKey];
-        let canReq = true;
-        Object.keys(j.req).forEach(rKey => {
-            if (st[rKey] < j.req[rKey]) canReq = false;
+    if (typeof JOBS !== 'undefined') {
+        Object.keys(JOBS).forEach(jKey => {
+            let j = JOBS[jKey];
+            let canReq = true;
+            Object.keys(j.req).forEach(rKey => {
+                if (st[rKey] < j.req[rKey]) canReq = false;
+            });
+            jobOptionsHtml += `
+                <div style="display:flex; justify-between; align-items:center; margin-bottom:5px; background:#161720; padding:6px; border-radius:4px;">
+                    <span style="font-size:13px;">${j.name} ${j.isMastery ? '🌟[三階專精]' : ''}</span>
+                    <button class="btn ${canReq ? 'btn-success' : 'btn-danger'}" ${!canReq ? 'disabled' : ''} style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">
+                        ${h.job === j.id ? '當前職業' : (canReq ? '轉職' : '未達門檻')}
+                    </button>
+                </div>
+            `;
         });
-        jobOptionsHtml += `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; background:#161720; padding:6px; border-radius:4px;">
-                <span style="font-size:13px;">${j.name} ${j.isMastery ? '🌟[三階專精]' : ''}</span>
-                <button class="btn ${canReq ? 'btn-success' : 'btn-danger'}" ${!canReq ? 'disabled' : ''} style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">
-                    ${h.job === j.id ? '當前職業' : (canReq ? '轉職' : '未達門檻')}
-                </button>
-            </div>
-        `;
-    });
+    }
 
+    let jobName = (typeof JOBS !== 'undefined' && JOBS[h.job]) ? JOBS[h.job].name : '無業遊民';
     body.innerHTML = `
         <h3>${h.name} 詳情面板</h3>
-        <p style="color:var(--accent);">當前職業: ${JOBS[h.job] ? JOBS[h.job].name : '無業遊民'} (可用點數: ${h.freePoints})</p>
+        <p style="color:var(--accent);">當前職業: ${jobName} (可用點數: ${h.freePoints})</p>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; font-size:13px;">
             <div>力量 (STR): ${h.baseStats.str} <button onclick="addStat('${h.id}', 'str')">+</button></div>
             <div>體質 (CON): ${h.baseStats.con} <button onclick="addStat('${h.id}', 'con')">+</button></div>
@@ -476,7 +495,7 @@ function addStat(heroId, statKey) {
 
 function changeHeroJob(heroId, jobId) {
     let h = gameState.heroes.find(x => x.id === heroId);
-    if (h) {
+    if (h && typeof JOBS !== 'undefined') {
         h.job = jobId;
         log(`✨ ${h.name} 成功轉職為 ${JOBS[jobId].name}！`);
         openHeroModal(heroId);
@@ -490,7 +509,6 @@ function closeHeroModal() {
     if (modal) modal.style.display = 'none';
 }
 
-// 背包與商店渲染
 function renderInventory() {
     let container = document.getElementById('inventory-grid');
     if (!container) return;
@@ -515,19 +533,22 @@ function renderShop() {
     let container = document.getElementById('shop-items');
     if (!container) return;
     container.innerHTML = "";
-    SHOP_ITEMS.forEach(s => {
-        container.innerHTML += `
-            <div class="card">
-                <h4>${s.name}</h4>
-                <p style="font-size:12px; color:#aaa;">${s.desc}</p>
-                <p style="color:var(--accent);">價格: ${s.cost} 金幣</p>
-                <button class="btn btn-primary" onclick="buyShopItem('${s.id}')">購買</button>
-            </div>
-        `;
-    });
+    if (typeof SHOP_ITEMS !== 'undefined') {
+        SHOP_ITEMS.forEach(s => {
+            container.innerHTML += `
+                <div class="card">
+                    <h4>${s.name}</h4>
+                    <p style="font-size:12px; color:#aaa;">${s.desc}</p>
+                    <p style="color:var(--accent);">價格: ${s.cost} 金幣</p>
+                    <button class="btn btn-primary" onclick="buyShopItem('${s.id}')">購買</button>
+                </div>
+            `;
+        });
+    }
 }
 
 function buyShopItem(id) {
+    if (typeof SHOP_ITEMS === 'undefined') return;
     let item = SHOP_ITEMS.find(s => s.id === id);
     if (gameState.gold >= item.cost) {
         gameState.gold -= item.cost;
@@ -591,7 +612,6 @@ function renderBestiary() {
     });
 }
 
-// 系統日誌
 function log(msg) {
     let logBox = document.getElementById('battle-log');
     if (logBox) {
