@@ -179,7 +179,6 @@ body {
     padding: 12px;
 }
 
-/* 商店與背包列表風格 */
 .shop-list-container {
     display: flex;
     flex-direction: column;
@@ -196,40 +195,13 @@ body {
     align-items: center;
 }
 
-.shop-item-info {
-    flex: 1;
-}
+.shop-item-info { flex: 1; }
+.shop-item-title { font-weight: bold; font-size: 14px; }
+.shop-item-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.shop-item-action { display: flex; align-items: center; gap: 12px; }
+.shop-item-price { color: var(--accent); font-weight: bold; font-size: 13px; }
 
-.shop-item-title {
-    font-weight: bold;
-    font-size: 14px;
-}
-
-.shop-item-desc {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 2px;
-}
-
-.shop-item-action {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.shop-item-price {
-    color: var(--accent);
-    font-weight: bold;
-    font-size: 13px;
-}
-
-.sub-nav {
-    display: flex;
-    gap: 5px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
-}
-
+.sub-nav { display: flex; gap: 5px; margin-bottom: 12px; flex-wrap: wrap; }
 .sub-btn {
     padding: 5px 10px;
     background: #161821;
@@ -238,11 +210,7 @@ body {
     border-radius: 4px;
     cursor: pointer;
 }
-
-.sub-btn.active {
-    background: var(--accent);
-    color: #fff;
-}
+.sub-btn.active { background: var(--accent); color: #fff; }
 
 .modal {
     display: none;
@@ -274,39 +242,13 @@ body {
     color: var(--text-muted);
 }
 
-.job-modal-layout {
-    display: flex;
-    gap: 12px;
-}
-
-@media (max-width: 600px) {
-    .job-modal-layout { flex-direction: column; }
-}
-
-.job-left-panel {
-    flex: 1;
-    background: #161720;
-    padding: 10px;
-    border-radius: 6px;
-    border: 1px solid var(--panel-border);
-}
-
-.job-right-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
+.job-modal-layout { display: flex; gap: 12px; }
+@media (max-width: 600px) { .job-modal-layout { flex-direction: column; } }
+.job-left-panel { flex: 1; background: #161720; padding: 10px; border-radius: 6px; border: 1px solid var(--panel-border); }
+.job-right-panel { flex: 1; display: flex; flex-direction: column; gap: 8px; }
 
 .boss-trigger-btn {
-    display: none;
-    width: 100%;
-    padding: 10px;
+    display: none; width: 100%; padding: 10px;
     background: linear-gradient(45deg, #e74c3c, #c0392b);
-    color: white;
-    font-weight: bold;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-top: 10px;
+    color: white; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px;
 }
