@@ -20,7 +20,6 @@
         </div>
     </div>
 
-    <!-- 修正手機端點擊傳遞 this -->
     <div class="nav-bar">
         <button class="nav-btn active" onclick="switchTab('battle', this)">⚔️ 討伐戰鬥</button>
         <button class="nav-btn" onclick="switchTab('heroes', this)">👥 冒險者陣型</button>
@@ -88,14 +87,20 @@
         <div id="tab-heroes" class="tab-content">
             <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <h3 style="margin:0;">公會冒險者列表</h3>
-                <button class="btn btn-success" onclick="recruitHero()">🍺 招募冒險者 (100金幣)</button>
+                <button class="btn btn-success" onclick="recruitHero()">🍺 招募冒險者 (120金幣)</button>
             </div>
             <div class="hero-grid" id="hero-list"></div>
         </div>
 
-        <!-- 3. 背包倉庫 -->
+        <!-- 3. 背包倉庫 (新增子分頁) -->
         <div id="tab-inventory" class="tab-content">
             <h3>🎒 道具與裝備倉庫</h3>
+            <div class="sub-nav">
+                <button class="sub-btn active" onclick="filterInv('all', this)">全部</button>
+                <button class="sub-btn" onclick="filterInv('equipment', this)">裝備</button>
+                <button class="sub-btn" onclick="filterInv('potion', this)">消耗品</button>
+                <button class="sub-btn" onclick="filterInv('material', this)">素材</button>
+            </div>
             <div class="inv-grid" id="inventory-grid"></div>
         </div>
 
