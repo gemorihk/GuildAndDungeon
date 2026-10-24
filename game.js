@@ -16,12 +16,13 @@ let gameState = {
     currentEnemies: { front: [], back: [] },
     tempSpoils: { gold: 0, items: [], exp: 0 },
     quests: [
-        { id: "q1", title: "清掃哥布林", targetMob: "goblin", count: 0, maxCount: 10, rewardGold: 120, completed: false, claimed: false }
+        { id: "q1", title: "清掃哥布林", targetMob: "goblin", count: 0, maxCount: 10, rewardGold: 150, completed: false, claimed: false }
     ]
 };
 
 let currentModalHeroId = null;
 let currentModalTab = 'stats';
+let currentInvFilter = 'all';
 
 window.onload = function() {
     loadGame();
@@ -188,7 +189,6 @@ function loadGame() {
     }
 }
 
-// 穩定的手機頁籤切換
 function switchTab(tabId, btnElement) {
     try {
         document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -207,6 +207,13 @@ function switchModalTab(tab, btnElement) {
     document.querySelectorAll('.modal-tab-btn').forEach(b => b.classList.remove('active'));
     if (btnElement) btnElement.classList.add('active');
     if (currentModalHeroId) openHeroModal(currentModalHeroId, true);
+}
+
+function filterInv(type, btnElement) {
+    currentInvFilter = type;
+    document.querySelectorAll('#tab-inventory .sub-btn').forEach(b => b.classList.remove('active'));
+    if (btnElement) btnElement.classList.add('active');
+    renderInventory();
 }
 
 function renderAll() {
@@ -410,8 +417,8 @@ function spawnWave() {
     let backMob = dung.mobs[Math.floor(Math.random() * dung.mobs.length)];
 
     gameState.currentEnemies = {
-        front: [{ ...frontMob, maxHp: frontMob.hp, id: "mob_f_" + Date.now() }],
-        back: [{ ...backMob, maxHp: backMob.hp, id: "mob_b_" + Date.now() }]
+        front: [{ ...frontMob, maxHp: frontMob.hp, mobId: frontMob.id }],
+        back: [{ ...backMob, maxHp: backMob.hp, mobId: backMob.id }]
     };
     if (!gameState.bestiary[frontMob.id]) gameState.bestiary[frontMob.id] = { ...frontMob, kills: 0 };
     if (!gameState.bestiary[backMob.id]) gameState.bestiary[backMob.id] = { ...backMob, kills: 0 };
@@ -424,7 +431,7 @@ function triggerBossFight() {
     gameState.inBossFight = true;
     gameState.bossAvailable = false;
     gameState.currentEnemies = {
-        front: [{ ...dung.boss, maxHp: dung.boss.hp, id: "boss_" + Date.now() }],
+        front: [{ ...dung.boss, maxHp: dung.boss.hp, mobId: dung.boss.id }],
         back: []
     };
     log(`🔥 首領 ${dung.boss.name} 降臨！`);
@@ -497,8 +504,16 @@ function startBattleLoop() {
                 if (targetEnemy.hp <= 0) {
                     log(`☠️ 擊敗 [${targetEnemy.name}]！獲得 ${targetEnemy.gold} 金幣`);
                     
-                    gameState.tempSpoils.gold += Math.floor(targetEnemy.gold * 1.5);
-                    if (Math.random() < 0.75) gameState.tempSpoils.items.push("高級魔獸素材");
+                    gameState.tempSpoils.gold += targetEnemy.gold;
+                    // 正確對應任務目標怪物 ID
+                    gameState.quests.forEach(q => {
+                        if (q.targetMob === targetEnemy.mobId && !q.completed) {
+                            q.count++;
+                            if (q.count >= q.maxCount) q.completed = true;
+                        }
+                    });
+
+                    if (Math.random() < 0.6) gameState.tempSpoils.items.push("魔獸素材");
 
                     activeHero.exp += targetEnemy.exp;
                     if (activeHero.exp >= activeHero.maxExp) {
@@ -515,9 +530,9 @@ function startBattleLoop() {
                         if (gameState.inBossFight) {
                             gameState.inBossFight = false;
                             gameState.waveCount = 0;
-                            log(`🏆 擊殺 Boss 成功！獲得極品素材與大量金幣！`);
-                            gameState.tempSpoils.gold += 500;
-                            gameState.tempSpoils.items.push("深淵龍鱗");
+                            log(`🏆 擊殺 Boss 成功！獲得專屬稀有素材與金幣！`);
+                            gameState.tempSpoils.gold += 300;
+                            gameState.tempSpoils.items.push("首領精華"); // 平衡 Boss 掉落量
                         } else {
                             gameState.waveCount++;
                             if (gameState.waveCount >= 10 && !gameState.bossAvailable) {
@@ -537,6 +552,7 @@ function startBattleLoop() {
         }
         renderPartyView();
         renderEnemiesView();
+        renderAll();
     }, 1200);
 }
 
@@ -554,8 +570,8 @@ function usePotion(hero, potionId) {
 }
 
 function recruitHero() {
-    if (gameState.gold >= 100) {
-        gameState.gold -= 100;
+    if (gameState.gold >= 120) {
+        gameState.gold -= 120;
         let gender = Math.random() > 0.5 ? 'male' : 'female';
         let nameList = (typeof HERO_NAMES !== 'undefined') ? HERO_NAMES[gender] : ["冒險者"];
         let randomName = nameList[Math.floor(Math.random() * nameList.length)];
@@ -568,7 +584,19 @@ function recruitHero() {
         renderAll();
         saveGame();
     } else {
-        alert("金幣不足 100！");
+        alert("金幣不足 120！");
+    }
+}
+
+// 自由切換英雄前後排陣營
+function toggleHeroRow(heroId) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (h) {
+        h.row = h.row === 'front' ? 'back' : 'front';
+        log(`🔄 [${h.name}] 已切換至【${h.row === 'front' ? '前衛' : '後衛'}】`);
+        renderAll();
+        saveGame();
+        if (currentModalHeroId) openHeroModal(currentModalHeroId, true);
     }
 }
 
@@ -589,6 +617,11 @@ function openHeroModal(heroId, isRefresh = false) {
             <p style="font-size:12px; color:#aaa;">性格: ${traitsHtml}</p>
             <p style="color:var(--accent);">當前職業: ${jobName} | 等級: Lv.${h.level}</p>
             
+            <div style="margin: 10px 0; background:#161720; padding:8px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:13px;">當前陣型位置: <strong>${h.row === 'front' ? '🛡️ 前衛' : '🏹 後衛'}</strong></span>
+                <button class="btn btn-warning" style="font-size:11px; padding:4px 10px;" onclick="toggleHeroRow('${h.id}')">切換${h.row === 'front' ? '至後衛' : '至前衛'}</button>
+            </div>
+
             <h4 style="margin:10px 0 5px 0;">📊 六維數值與天生資質評分</h4>
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:12px; background:#161720; padding:10px; border-radius:6px;">
                 <div>力量 (STR): ${Math.floor(st.str)} <span style="color:var(--accent);">[${h.growthGrades.str}]</span></div>
@@ -600,7 +633,7 @@ function openHeroModal(heroId, isRefresh = false) {
             </div>
 
             <h4 style="margin:15px 0 5px 0;">📜 轉職樹與職業參數補正</h4>
-            <div style="max-height:200px; overflow-y:auto;">
+            <div style="max-height:180px; overflow-y:auto;">
                 ${(typeof JOBS !== 'undefined') ? Object.keys(JOBS).map(jKey => {
                     let j = JOBS[jKey];
                     let canReq = true;
@@ -710,23 +743,34 @@ function renderHeroList() {
         container.innerHTML += `
             <div class="card">
                 <h4>${h.name} ${genderIcon}</h4>
-                <p style="font-size:12px; color:var(--accent);">${jobName} | 陣型: ${h.row === 'front' ? '前衛' : '後衛'}</p>
+                <p style="font-size:12px; color:var(--accent);">${jobName} | 陣型: <strong>${h.row === 'front' ? '前衛' : '後衛'}</strong></p>
                 <p style="font-size:12px;">STR: ${Math.floor(st.str)} | CON: ${Math.floor(st.con)} | MND: ${Math.floor(st.mnd)}</p>
-                <button class="btn btn-primary" style="width:100%; margin-top:8px;" onclick="openHeroModal('${h.id}')">管理角色</button>
+                <div style="display:flex; gap:6px; margin-top:8px;">
+                    <button class="btn btn-warning" style="flex:1; font-size:11px;" onclick="toggleHeroRow('${h.id}')">切換${h.row === 'front' ? '後衛' : '前衛'}</button>
+                    <button class="btn btn-primary" style="flex:1; font-size:11px;" onclick="openHeroModal('${h.id}')">管理角色</button>
+                </div>
             </div>
         `;
     });
 }
 
+// 背包分頁過濾顯示
 function renderInventory() {
     let container = document.getElementById('inventory-grid');
     if (!container) return;
     container.innerHTML = "";
-    if (!gameState.inventory || gameState.inventory.length === 0) {
-        container.innerHTML = "<p style='color:#aaa;'>倉庫空空如也，快去探索獲得戰利品吧！</p>";
+    
+    let filteredItems = gameState.inventory.filter(item => {
+        if (currentInvFilter === 'all') return true;
+        return item.type === currentInvFilter;
+    });
+
+    if (filteredItems.length === 0) {
+        container.innerHTML = "<p style='color:#aaa;'>此分頁沒有道具或裝備。</p>";
         return;
     }
-    gameState.inventory.forEach(item => {
+
+    filteredItems.forEach(item => {
         container.innerHTML += `
             <div class="card">
                 <strong>${item.name}</strong> x${item.count}
