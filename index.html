@@ -20,14 +20,15 @@
         </div>
     </div>
 
+    <!-- 修正手機端點擊傳遞 this -->
     <div class="nav-bar">
-        <button class="nav-btn active" onclick="switchTab('battle')">⚔️ 討伐戰鬥</button>
-        <button class="nav-btn" onclick="switchTab('heroes')">👥 冒險者陣型</button>
-        <button class="nav-btn" onclick="switchTab('inventory')">🎒 背包倉庫</button>
-        <button class="nav-btn" onclick="switchTab('shop')">🏪 道具商店</button>
-        <button class="nav-btn" onclick="switchTab('forge')">🔨 鐵匠鋪</button>
-        <button class="nav-btn" onclick="switchTab('quests')">📜 任務告示</button>
-        <button class="nav-btn" onclick="switchTab('bestiary')">📖 怪物圖鑑</button>
+        <button class="nav-btn active" onclick="switchTab('battle', this)">⚔️ 討伐戰鬥</button>
+        <button class="nav-btn" onclick="switchTab('heroes', this)">👥 冒險者陣型</button>
+        <button class="nav-btn" onclick="switchTab('inventory', this)">🎒 背包倉庫</button>
+        <button class="nav-btn" onclick="switchTab('shop', this)">🏪 道具商店</button>
+        <button class="nav-btn" onclick="switchTab('forge', this)">🔨 鐵匠鋪</button>
+        <button class="nav-btn" onclick="switchTab('quests', this)">📜 任務告示</button>
+        <button class="nav-btn" onclick="switchTab('bestiary', this)">📖 怪物圖鑑</button>
     </div>
 
     <div class="main-content">
@@ -64,7 +65,7 @@
                     <div id="party-back-list"></div>
                 </div>
                 <div class="battle-column">
-                    <h4 style="margin:0 0 10px 0; color:#ff6b6b;">⚔️ 敵人 <span id="wave-counter" style="font-size:12px; color:#aaa;">(波次: 0/10)</span></h4>
+                    <h4 style="margin:0 0 10px 0; color:#ff6b6b;">⚔️ 敵人 <span id="wave-counter" style="font-size:12px; color:#aaa;">(未出發)</span></h4>
                     <div style="font-size:11px; color:#aaa; margin-bottom:5px;">【敵方前排】</div>
                     <div id="enemy-front-list"></div>
                     <div style="font-size:11px; color:#aaa; margin:10px 0 5px 0;">【敵方后排】</div>
@@ -85,8 +86,8 @@
 
         <!-- 2. 冒險者頁籤 -->
         <div id="tab-heroes" class="tab-content">
-            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
-                <h3>公會冒險者列表 (前衛 3 人 / 後衛 3 人)</h3>
+            <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <h3 style="margin:0;">公會冒險者列表</h3>
                 <button class="btn btn-success" onclick="recruitHero()">🍺 招募冒險者 (100金幣)</button>
             </div>
             <div class="hero-grid" id="hero-list"></div>
@@ -123,13 +124,13 @@
         </div>
     </div>
 
-    <!-- 角色詳情 Modal 彈窗 (支援子頁籤切換) -->
+    <!-- 角色詳情 Modal 彈窗 -->
     <div id="hero-modal" class="modal">
         <div class="modal-content">
             <span class="close-modal" onclick="closeHeroModal()">&times;</span>
             <div class="modal-tab-header">
-                <button class="modal-tab-btn active" onclick="switchModalTab('stats')">📊 屬性與資質</button>
-                <button class="modal-tab-btn" onclick="switchModalTab('skills')">⚔️ 技能與裝備</button>
+                <button class="modal-tab-btn active" onclick="switchModalTab('stats', this)">📊 屬性與資質</button>
+                <button class="modal-tab-btn" onclick="switchModalTab('skills', this)">⚔️ 技能與裝備</button>
             </div>
             <div id="modal-hero-body" style="margin-top: 15px;"></div>
         </div>
