@@ -23,8 +23,8 @@ let gameState = {
 window.onload = function() {
     loadGame();
     
-    // 如果沒有冒險者，強制建立初始主人公與同伴
-    if (!gameState.heroes || gameState.heroes.length === 0) {
+    // 強制安全檢查：如果英雄列表為空，立刻建立初始主角
+    if (!gameState.heroes || !Array.isArray(gameState.heroes) || gameState.heroes.length === 0) {
         initDefaultHeroes();
         saveGame();
     }
@@ -37,13 +37,13 @@ window.onload = function() {
 // 創立角色 (含性別與世代繁衍資料結構)
 function createHero(name, gender, stats, gen = 1) {
     let hero = {
-        id: "hero_" + Date.now() + "_" + Math.floor(Math.random()*10000),
-        name: name,
-        gender: gender, // 'male' 或 'female'
-        generation: gen, // 第幾代冒險者
+        id: "hero_" + Date.now + "_" + Math.floor(Math.random()*100000),
+        name: name || "無名英雄",
+        gender: gender || 'male',
+        generation: gen,
         fatherId: null,
         motherId: null,
-        spouseId: null, // 配偶 ID (為結婚系統預留)
+        spouseId: null,
         level: 1,
         exp: 0,
         maxExp: 100,
@@ -51,7 +51,7 @@ function createHero(name, gender, stats, gen = 1) {
         jobLevels: { novice: 1 },
         unlockedSkills: [],
         equippedSkills: [],
-        baseStats: stats,
+        baseStats: stats || { str: 10, con: 10, mnd: 10, dex: 10, agi: 10, luk: 10 },
         freePoints: 5,
         hp: 100,
         mp: 30,
@@ -65,19 +65,19 @@ function createHero(name, gender, stats, gen = 1) {
 
 // 創立預設男女主人公
 function initDefaultHeroes() {
-    gameState.heroes = [];
-    // 主角 亞瑟 (男 ♂)
-    gameState.heroes.push(createHero("亞瑟 (主人公)", "male", { str: 12, con: 12, mnd: 10, dex: 10, agi: 10, luk: 10 }));
-    // 同伴 莉莉絲 (女 ♀)
-    gameState.heroes.push(createHero("莉莉絲", "female", { str: 8, con: 8, mnd: 14, dex: 10, agi: 10, luk: 10 }));
-    log("✨ 公會成功招募初始冒險者：亞瑟 ♂ 與 莉莉絲 ♀！");
+    gameState.heroes = [
+        createHero("亞瑟 (主人公)", "male", { str: 12, con: 12, mnd: 10, dex: 10, agi: 10, luk: 10 }),
+        createHero("莉莉絲", "female", { str: 8, con: 8, mnd: 14, dex: 10, agi: 10, luk: 10 })
+    ];
+    console.log("已初始化預設英雄：", gameState.heroes);
 }
 
 // 計算角色完整屬性
 function getHeroStats(hero) {
-    let s = { ...hero.baseStats };
-    let maxHp = s.con * 12 + s.str * 3 + hero.level * 10;
-    let maxMp = s.mnd * 8 + hero.level * 5;
+    let s = hero.baseStats || { str: 10, con: 10, mnd: 10, dex: 10, agi: 10, luk: 10 };
+    let lv = hero.level || 1;
+    let maxHp = s.con * 12 + s.str * 3 + lv * 10;
+    let maxMp = s.mnd * 8 + lv * 5;
     let hpRegen = parseFloat((s.con * 0.4).toFixed(1)); 
     let atk = s.str * 2 + s.dex * 0.5;
     let matk = s.mnd * 2.2;
@@ -100,7 +100,6 @@ function saveGame() {
 
 function manualSaveGame() {
     if (saveGame()) {
-        log("💾 遊戲進度已手動儲存！");
         alert("存檔成功！");
     }
 }
@@ -113,7 +112,7 @@ function resetSaveData() {
         initDefaultHeroes();
         saveGame();
         renderAll();
-        alert("存檔已成功重置！已為您創建初始主人公團隊。");
+        alert("存檔已成功重置！");
     }
 }
 
@@ -122,9 +121,8 @@ function loadGame() {
         let savedData = localStorage.getItem('guild_and_dungeon_save');
         if (savedData) {
             let parsed = JSON.parse(savedData);
-            if (parsed.heroes && parsed.heroes.length > 0) {
+            if (parsed && typeof parsed === 'object') {
                 gameState = { ...gameState, ...parsed };
-                log("📂 已成功載入存檔！");
             }
         }
     } catch (e) {
@@ -188,7 +186,7 @@ function changeDungeon(id) {
     renderAll();
 }
 
-// 討伐隊伍顯示 (含性別標籤)
+// 討伐隊伍顯示
 function renderPartyView() {
     let container = document.getElementById('player-party-list');
     if (!container) return;
@@ -290,17 +288,19 @@ function startBattleLoop() {
         let threshold = thresholdEl ? parseInt(thresholdEl.value) || 40 : 40;
         let potionType = potionTypeEl ? potionTypeEl.value : 'pot_small';
 
-        gameState.heroes.forEach(h => {
-            let st = getHeroStats(h);
-            if (h.hp > 0 && h.hp < st.maxHp) {
-                h.hp = Math.min(st.maxHp, h.hp + st.hpRegen);
-            }
-            if (h.hp > 0 && (h.hp / st.maxHp * 100) < threshold) {
-                usePotion(h, potionType);
-            }
-        });
+        if (gameState.heroes && gameState.heroes.length > 0) {
+            gameState.heroes.forEach(h => {
+                let st = getHeroStats(h);
+                if (h.hp > 0 && h.hp < st.maxHp) {
+                    h.hp = Math.min(st.maxHp, h.hp + st.hpRegen);
+                }
+                if (h.hp > 0 && (h.hp / st.maxHp * 100) < threshold) {
+                    usePotion(h, potionType);
+                }
+            });
+        }
 
-        if (gameState.currentEnemies.length > 0) {
+        if (gameState.currentEnemies.length > 0 && gameState.heroes && gameState.heroes.length > 0) {
             let activeHero = gameState.heroes.find(h => h.hp > 0);
             let activeEnemy = gameState.currentEnemies[0];
 
@@ -388,16 +388,18 @@ function retreat() {
     gameState.waveCount = 0;
     gameState.bossAvailable = false;
     gameState.inBossFight = false;
-    gameState.heroes.forEach(h => {
-        let st = getHeroStats(h);
-        h.hp = st.maxHp;
-    });
+    if (gameState.heroes) {
+        gameState.heroes.forEach(h => {
+            let st = getHeroStats(h);
+            h.hp = st.maxHp;
+        });
+    }
     log(`🏃 全隊撤退回城，HP 完全恢復！`);
     saveGame();
     renderAll();
 }
 
-// 招募新冒險者 (隨機性別與名字)
+// 招募新冒險者
 function recruitHero() {
     if (gameState.gold >= 100) {
         gameState.gold -= 100;
@@ -415,24 +417,25 @@ function recruitHero() {
             luk: 8 + Math.floor(Math.random()*6) 
         });
         
+        if (!gameState.heroes) gameState.heroes = [];
         gameState.heroes.push(newHero);
         log(`🍻 成功招募了新冒險者：${randomName} (${gender === 'male' ? '男 ♂' : '女 ♀'})！`);
         
         renderAll();
         saveGame();
     } else {
-        alert("金幣不足 100！先讓主人公討伐哥布林賺取金幣吧！");
+        alert("金幣不足 100！");
     }
 }
 
-// 冒險者列表渲染 (顯示性別標籤)
+// 渲染冒險者列表
 function renderHeroList() {
     let container = document.getElementById('hero-list');
     if (!container) return;
     container.innerHTML = "";
     
     if (!gameState.heroes || gameState.heroes.length === 0) {
-        container.innerHTML = "<p style='color:#aaa;'>目前公會暫無冒險者，請點擊【重置存檔】或【招募新冒險者】。</p>";
+        container.innerHTML = "<p style='color:#aaa;'>目前公會暫無冒險者，請點擊【重置存檔】。</p>";
         return;
     }
 
