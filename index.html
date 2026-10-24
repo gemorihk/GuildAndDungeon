@@ -92,7 +92,7 @@
             <div class="hero-grid" id="hero-list"></div>
         </div>
 
-        <!-- 3. 背包倉庫 (含售賣功能) -->
+        <!-- 3. 背包倉庫 -->
         <div id="tab-inventory" class="tab-content">
             <h3>🎒 道具與裝備倉庫</h3>
             <div class="sub-nav">
@@ -151,12 +151,11 @@
         </div>
     </div>
 
-    <!-- 雙欄職業選擇彈窗 (含頂部當前能力顯示) -->
+    <!-- 雙欄職業選擇彈窗 (含頂部當前能力顯示與未滿足條件提示) -->
     <div id="job-modal" class="modal">
         <div class="modal-content" style="max-width: 750px;">
             <span class="close-modal" onclick="closeJobModal()">&times;</span>
             <h3 style="margin-top:0;">轉職與職業管理</h3>
-            <!-- 頂部能力顯示 -->
             <div id="job-modal-hero-stats" style="background:#161720; padding:10px; border-radius:6px; margin-bottom:12px; font-size:12px; border:1px solid var(--panel-border);"></div>
             <div class="job-modal-layout">
                 <div class="job-left-panel" id="job-left-desc">
@@ -167,7 +166,8 @@
         </div>
     </div>
 
-    <script src="data.js"></script>
+    <!-- 必須先載入 database.js 模組 -->
+    <script src="database.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
