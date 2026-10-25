@@ -6,7 +6,8 @@ let gameState = {
     heroes: [],
     inventory: [
         { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, sell: 10, count: 10, desc: "恢復 80 點生命值" },
-        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, sell: 40, count: 1, desc: "基礎戰士長劍" }
+        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", rarity: "N", atk: 15, cost: 120, sell: 40, count: 1, desc: "基礎戰士長劍" },
+        { id: "wooden_bow", name: "獵弓", type: "equipment", slot: "weapon", category: "equipment", equipType: "bow", rarity: "N", atk: 12, dex: 5, cost: 120, sell: 40, count: 1, desc: "輕巧木弓" }
     ],
     bestiary: {},
     activeDungeonId: "goblin_cave",
@@ -22,6 +23,8 @@ let gameState = {
 
 let currentModalHeroId = null;
 let currentJobModalHeroId = null;
+let currentEquipHeroId = null;
+let currentEquipSlot = null;
 let selectedJobIdForView = null;
 let currentModalTab = 'stats';
 let currentInvFilter = 'all';
@@ -73,7 +76,7 @@ function createHero(name, gender, row = 'front', gen = 1) {
         generation: gen,
         level: 1, exp: 0, maxExp: 100,
         job: "novice",
-        unlockedJobs: ["novice"], // 預設解鎖無業遊民
+        unlockedJobs: ["novice"],
         jobLevels: { novice: 1 },
         jobExps: { novice: 0 },
         jobMaxExps: { novice: 50 },
@@ -202,7 +205,7 @@ function resetSaveData() {
             heroes: [],
             inventory: [
                 { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, sell: 10, count: 10, desc: "恢復 80 點生命值" },
-                { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, sell: 40, count: 1, desc: "基礎戰士長劍" }
+                { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", rarity: "N", atk: 15, cost: 120, sell: 40, count: 1, desc: "基礎戰士長劍" }
             ],
             bestiary: {}, activeDungeonId: "goblin_cave", waveCount: 0,
             isExploring: false, isPaused: false, bossAvailable: false, inBossFight: false,
@@ -496,17 +499,20 @@ function renderEnemiesView() {
     }
 }
 
+// 修正 1：依照前排 (frontMobs) 與後排 (backMobs) 正確刷出怪物
 function spawnWave() {
     if (typeof DUNGEONS === 'undefined') return;
     let dung = DUNGEONS.find(d => d.id === gameState.activeDungeonId);
     if (!dung) return;
-    let frontMob = dung.mobs[Math.floor(Math.random() * dung.mobs.length)];
-    let backMob = dung.mobs[Math.floor(Math.random() * dung.mobs.length)];
+
+    let frontMob = dung.frontMobs[Math.floor(Math.random() * dung.frontMobs.length)];
+    let backMob = dung.backMobs[Math.floor(Math.random() * dung.backMobs.length)];
 
     gameState.currentEnemies = {
         front: [{ ...frontMob, maxHp: frontMob.hp, mobId: frontMob.id, ct: 0, spd: frontMob.spd || 15 }],
-        back: [{ ...backMob, maxHp: backMob.hp, mobId: backMob.id, ct: 0, spd: backMob.spd || 12 }]
+        back: [{ ...backMob, maxHp: backMob.hp, mobId: backMob.id, ct: 0, spd: backMob.spd || 16 }]
     };
+
     if (!gameState.bestiary[frontMob.id]) gameState.bestiary[frontMob.id] = { ...frontMob, kills: 0 };
     if (!gameState.bestiary[backMob.id]) gameState.bestiary[backMob.id] = { ...backMob, kills: 0 };
 }
@@ -569,6 +575,7 @@ function startBattleLoop() {
             readyHero.ct -= 100;
 
             let heroSt = getHeroStats(readyHero);
+            // 攻擊判定：若前排有敵人必須先攻擊前排，前排清空後攻擊後排
             let targetEnemy = frontEnemies.length > 0 ? frontEnemies[0] : backEnemies[0];
 
             let usedSkill = null;
@@ -605,6 +612,14 @@ function startBattleLoop() {
             if (targetEnemy.hp <= 0) {
                 log(`☠️ 擊敗 [${targetEnemy.name}]！獲得 ${targetEnemy.gold} 金幣`);
                 gameState.tempSpoils.gold += targetEnemy.gold;
+
+                // 修正 2：精確比對任務擊殺數量
+                gameState.activeQuests.forEach(q => {
+                    if (q.targetMob === targetEnemy.mobId && !q.completed) {
+                        q.count++;
+                        if (q.count >= q.maxCount) q.completed = true;
+                    }
+                });
 
                 if (targetEnemy.drops && targetEnemy.drops.length > 0) {
                     let dropItemName = targetEnemy.drops[0].name;
@@ -744,7 +759,107 @@ function cycleHeroRow(heroId) {
     }
 }
 
-// 修正 2 & 3 & 4：轉職頁面與解鎖費用/無條件切換
+// 修正 3：開啟裝備替換專屬視窗 (彩色可穿戴、灰色禁用)
+function openEquipModal(heroId, slot) {
+    currentEquipHeroId = heroId;
+    currentEquipSlot = slot;
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (!h) return;
+
+    let jobData = JOBS[h.job];
+    let slotName = slot === 'weapon' ? '武器' : (slot === 'armor' ? '防具' : '飾品');
+    document.getElementById('equip-modal-title').innerText = `選擇要裝備的【${slotName}】`;
+
+    let listContainer = document.getElementById('equip-modal-list');
+    listContainer.innerHTML = "";
+
+    // 篩選出背包中所有屬於 equipment 且 slot 匹配的裝備
+    let allEquips = gameState.inventory.filter(i => i.type === 'equipment' && i.slot === slot);
+
+    if (allEquips.length === 0) {
+        listContainer.innerHTML = `<p style="color:#aaa; text-align:center;">背包中沒有任何【${slotName}】裝備！</p>`;
+    } else {
+        allEquips.forEach(item => {
+            let canEquip = true;
+            if (jobData && jobData.allowedEquip && !jobData.allowedEquip.includes("all")) {
+                if (!jobData.allowedEquip.includes(item.equipType)) {
+                    canEquip = false; // 職業不符合，顯示為灰色
+                }
+            }
+
+            let style = canEquip ? "background:#161720; border:1px solid var(--accent); cursor:pointer;" : "background:#121318; border:1px solid #333; opacity:0.4; cursor:not-allowed;";
+            let actionBtn = canEquip ? `<button class="btn btn-primary" style="font-size:11px;" onclick="equipItemFromModal('${item.id}')">穿戴</button>` : `<button class="btn btn-danger" style="font-size:11px;" disabled>職業不符</button>`;
+
+            listContainer.innerHTML += `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px; border-radius:6px; ${style}">
+                    <div>
+                        <strong>${item.name}</strong> <span style="font-size:11px; color:var(--accent);">x${item.count}</span>
+                        <div style="font-size:11px; color:#aaa;">${item.desc || ''}</div>
+                    </div>
+                    <div>${actionBtn}</div>
+                </div>
+            `;
+        });
+    }
+
+    let modal = document.getElementById('equip-modal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeEquipModal() {
+    let modal = document.getElementById('equip-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function equipItemFromModal(itemId) {
+    let h = gameState.heroes.find(x => x.id === currentEquipHeroId);
+    let item = gameState.inventory.find(i => i.id === itemId);
+    if (!h || !item) return;
+
+    if (!h.equippedItems) h.equippedItems = { weapon: null, armor: null, accessory: null };
+
+    // 若該位置已有裝備，先卸下歸還背包
+    if (h.equippedItems[currentEquipSlot]) {
+        let oldItem = h.equippedItems[currentEquipSlot];
+        let invOld = gameState.inventory.find(i => i.name === oldItem.name);
+        if (invOld) invOld.count++;
+        else gameState.inventory.push({ ...oldItem, count: 1 });
+    }
+
+    h.equippedItems[currentEquipSlot] = { ...item };
+    item.count--;
+    if (item.count <= 0) {
+        gameState.inventory = gameState.inventory.filter(i => i !== item);
+    }
+
+    log(`⚔️ [${h.name}] 裝備了【${item.name}】！`);
+    closeEquipModal();
+    openHeroModal(currentEquipHeroId, true);
+    renderAll();
+    saveGame();
+}
+
+function unequipCurrentSlot() {
+    let h = gameState.heroes.find(x => x.id === currentEquipHeroId);
+    if (!h || !h.equippedItems || !h.equippedItems[currentEquipSlot]) {
+        alert("當前位置沒有穿戴任何裝備！");
+        return;
+    }
+
+    let oldItem = h.equippedItems[currentEquipSlot];
+    let invOld = gameState.inventory.find(i => i.name === oldItem.name);
+    if (invOld) invOld.count++;
+    else gameState.inventory.push({ ...oldItem, count: 1 });
+
+    h.equippedItems[currentEquipSlot] = null;
+    log(`🔓 [${h.name}] 卸下了【${oldItem.name}】`);
+    closeEquipModal();
+    openHeroModal(currentEquipHeroId, true);
+    renderAll();
+    saveGame();
+}
+
+// 職業管理 Modal
 function openJobModal(heroId) {
     currentJobModalHeroId = heroId;
     let h = gameState.heroes.find(x => x.id === heroId);
@@ -793,13 +908,10 @@ function renderJobModalContent() {
         if (isCurrent) {
             btnHtml = `<button class="btn btn-success" style="font-size:11px;" disabled>當前職業</button>`;
         } else if (isUnlocked) {
-            // 已解鎖過的職業：無條件自由切換
             btnHtml = `<button class="btn btn-primary" style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">切換 (Lv.${savedJobLv})</button>`;
         } else if (!canReq) {
-            // 未滿足數值條件：明確標示「未滿足條件」
             btnHtml = `<button class="btn btn-danger" style="font-size:11px; opacity:0.6;" disabled>未滿足條件</button>`;
         } else {
-            // 滿足條件但尚未獲得：需要扣除費用解鎖
             let costGold = (j.cost && j.cost.gold) ? j.cost.gold : 50;
             btnHtml = `<button class="btn btn-warning" style="font-size:11px;" onclick="unlockHeroJob('${h.id}', '${j.id}')">解鎖職業 (🪙 ${costGold}金幣)</button>`;
         }
@@ -848,7 +960,6 @@ function selectJobView(jobId) {
     `;
 }
 
-// 解鎖全新職業並扣除費用
 function unlockHeroJob(heroId, jobId) {
     let h = gameState.heroes.find(x => x.id === heroId);
     let j = JOBS[jobId];
@@ -875,7 +986,6 @@ function unlockHeroJob(heroId, jobId) {
     }
 }
 
-// 無條件切換已解鎖職業
 function changeHeroJob(heroId, jobId) {
     let h = gameState.heroes.find(x => x.id === heroId);
     if (h && typeof JOBS !== 'undefined') {
@@ -894,73 +1004,6 @@ function closeJobModal() {
     currentJobModalHeroId = null;
     let modal = document.getElementById('job-modal');
     if (modal) modal.style.display = 'none';
-}
-
-// 修正 1：完美修復武器、防具與飾品的替換選單
-function selectEquipForHero(heroId, slot) {
-    let h = gameState.heroes.find(x => x.id === heroId);
-    if (!h) return;
-
-    let jobData = JOBS[h.job];
-    let availableEquips = gameState.inventory.filter(i => {
-        if (i.type !== 'equipment' || i.slot !== slot || i.count <= 0) return false;
-        if (!jobData || !jobData.allowedEquip) return true;
-        if (jobData.allowedEquip.includes("all")) return true;
-        return jobData.allowedEquip.includes(i.equipType);
-    });
-
-    let slotName = slot === 'weapon' ? '武器' : (slot === 'armor' ? '防具' : '飾品');
-
-    if (availableEquips.length === 0) {
-        let choice = confirm(`背包中目前沒有【${jobData ? jobData.name : ''}】可裝備的【${slotName}】！\n是否要卸下當前穿戴的 ${slotName}？`);
-        if (choice) equipItem(heroId, slot, null);
-        return;
-    }
-
-    let equipNames = availableEquips.map((e, idx) => `${idx + 1}. ${e.name} (${e.desc || ''})`).join('\n');
-    let input = prompt(`請輸入數字選擇要裝備的【${slotName}】 (輸入 0 卸下當前裝備):\n${equipNames}`);
-    
-    if (input === "0") {
-        equipItem(heroId, slot, null);
-    } else if (input && parseInt(input) > 0 && parseInt(input) <= availableEquips.length) {
-        let chosenItem = availableEquips[parseInt(input) - 1];
-        equipItem(heroId, slot, chosenItem);
-    }
-}
-
-function equipItem(heroId, slot, itemObj) {
-    let h = gameState.heroes.find(x => x.id === heroId);
-    if (!h) return;
-
-    if (!h.equippedItems) h.equippedItems = { weapon: null, armor: null, accessory: null };
-    
-    // 卸下舊裝備並歸還背包
-    if (h.equippedItems[slot]) {
-        let oldItem = h.equippedItems[slot];
-        let invOld = gameState.inventory.find(i => i.name === oldItem.name);
-        if (invOld) invOld.count++;
-        else gameState.inventory.push({ ...oldItem, count: 1 });
-        log(`🛡️ [${h.name}] 卸下了【${oldItem.name}】`);
-    }
-
-    // 穿上新裝備並扣除背包數量
-    if (itemObj) {
-        h.equippedItems[slot] = { ...itemObj };
-        let invNew = gameState.inventory.find(i => i.id === itemObj.id || i.name === itemObj.name);
-        if (invNew) {
-            invNew.count--;
-            if (invNew.count <= 0) {
-                gameState.inventory = gameState.inventory.filter(i => i !== invNew);
-            }
-        }
-        log(`⚔️ [${h.name}] 裝備了【${itemObj.name}】！`);
-    } else {
-        h.equippedItems[slot] = null;
-    }
-
-    openHeroModal(heroId, true);
-    renderAll();
-    saveGame();
 }
 
 function openHeroModal(heroId, isRefresh = false) {
@@ -987,15 +1030,15 @@ function openHeroModal(heroId, isRefresh = false) {
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin:10px 0;">
                 <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
                     <strong>武器:</strong> ${eq.weapon ? eq.weapon.name : '無'}<br>
-                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'weapon')">替換</button>
+                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="openEquipModal('${h.id}', 'weapon')">替換</button>
                 </div>
                 <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
                     <strong>防具:</strong> ${eq.armor ? eq.armor.name : '無'}<br>
-                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'armor')">替換</button>
+                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="openEquipModal('${h.id}', 'armor')">替換</button>
                 </div>
                 <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
                     <strong>飾品:</strong> ${eq.accessory ? eq.accessory.name : '無'}<br>
-                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'accessory')">替換</button>
+                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="openEquipModal('${h.id}', 'accessory')">替換</button>
                 </div>
             </div>
         `;
