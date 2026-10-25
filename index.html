@@ -151,7 +151,17 @@
         </div>
     </div>
 
-    <!-- 雙欄職業選擇彈窗 (含頂部當前能力顯示與未滿足條件提示) -->
+    <!-- 裝備替換專屬視覺化彈窗 (彩色可選、灰色禁用、卸下按鈕) -->
+    <div id="equip-modal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close-modal" onclick="closeEquipModal()">&times;</span>
+            <h3 id="equip-modal-title" style="margin-top:0;">選擇裝備</h3>
+            <div id="equip-modal-list" style="display:flex; flex-direction:column; gap:8px; max-height: 50vh; overflow-y:auto; margin-bottom:12px;"></div>
+            <button class="btn btn-danger" style="width:100%;" onclick="unequipCurrentSlot()">🔓 卸下當前裝備</button>
+        </div>
+    </div>
+
+    <!-- 雙欄職業選擇彈窗 -->
     <div id="job-modal" class="modal">
         <div class="modal-content" style="max-width: 750px;">
             <span class="close-modal" onclick="closeJobModal()">&times;</span>
@@ -166,7 +176,6 @@
         </div>
     </div>
 
-    <!-- 必須先載入 database.js 模組 -->
     <script src="database.js"></script>
     <script src="game.js"></script>
 </body>
