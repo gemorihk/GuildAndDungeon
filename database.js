@@ -42,34 +42,39 @@ const ITEMS_DATABASE = [
     { id: "mat_lava_ore", name: "熔岩礦石", type: "material", category: "material", rarity: "SR", cost: 100, sell: 33, desc: "帶有高溫熱力的赤紅礦石" }
 ];
 
-// 裝備範本，方便隨機掉落
 const EQUIPMENT_TEMPLATES = ITEMS_DATABASE.filter(i => i.type === "equipment");
 
 // ==========================================
-// 4. 探索區域與怪物掉落資料庫
+// 4. 探索區域與怪物掉落資料庫 (明確區分前排與後排敵人)
 // ==========================================
 const DUNGEONS = [
     {
         id: "goblin_cave", name: "第 1 層：哥布林洞窟 [地] (Lv.1+)", element: "earth", reqLv: 1, tier: 1,
-        mobs: [
-            { id: "goblin", name: "哥布林戰士", race: "goblin", hp: 320, atk: 45, def: 12, spd: 14, exp: 30, gold: 15, type: "melee", drops: [{ name: "鐵劍", chance: 1.0 }, { name: "哥布林皮毛", chance: 1.0 }] },
+        frontMobs: [
+            { id: "goblin", name: "哥布林戰士", race: "goblin", hp: 320, atk: 45, def: 12, spd: 14, exp: 30, gold: 15, type: "melee", drops: [{ name: "鐵劍", chance: 1.0 }, { name: "哥布林皮毛", chance: 1.0 }] }
+        ],
+        backMobs: [
             { id: "goblin_archer", name: "哥布林弓手", race: "goblin", hp: 250, atk: 55, def: 8, spd: 16, exp: 35, gold: 18, type: "ranged", drops: [{ name: "獵弓", chance: 1.0 }, { name: "碎布", chance: 1.0 }] }
         ],
         boss: { id: "goblin_king", name: "哥布林萬人王 [Boss]", race: "goblin", hp: 2500, atk: 120, def: 35, spd: 18, exp: 300, gold: 200, type: "melee", drops: [{ name: "鐵甲", chance: 1.0 }, { name: "青銅戒指", chance: 1.0 }] }
     },
     {
         id: "skeleton_crypt", name: "第 2 層：地下骷髏墓穴 [暗] (Lv.3+)", element: "dark", reqLv: 3, tier: 2,
-        mobs: [
-            { id: "skeleton_warrior", name: "骷髏劍士", race: "undead", hp: 650, atk: 85, def: 25, spd: 15, exp: 60, gold: 35, type: "melee", drops: [{ name: "鐵劍", chance: 1.0 }, { name: "枯骨碎塊", chance: 1.0 }] },
+        frontMobs: [
+            { id: "skeleton_warrior", name: "骷髏劍士", race: "undead", hp: 650, atk: 85, def: 25, spd: 15, exp: 60, gold: 35, type: "melee", drops: [{ name: "鐵劍", chance: 1.0 }, { name: "枯骨碎塊", chance: 1.0 }] }
+        ],
+        backMobs: [
             { id: "skeleton_mage", name: "亡靈法師", race: "undead", hp: 480, atk: 110, def: 15, spd: 17, exp: 75, gold: 45, type: "ranged", drops: [{ name: "學徒短杖", chance: 1.0 }, { name: "魔力殘渣", chance: 1.0 }] }
         ],
         boss: { id: "lich_king", name: "死靈領主 [Boss]", race: "undead", hp: 5500, atk: 220, def: 60, spd: 22, exp: 800, gold: 500, type: "ranged", drops: [{ name: "學徒短杖", chance: 1.0 }, { name: "青銅戒指", chance: 1.0 }] }
     },
     {
         id: "lava_volcano", name: "第 3 層：熾熱熔岩火山 [火] (Lv.5+)", element: "fire", reqLv: 5, tier: 3,
-        mobs: [
-            { id: "fire_elemental", name: "熔岩火靈", race: "advanced_monster", hp: 1200, atk: 160, def: 40, spd: 18, exp: 120, gold: 70, type: "ranged", drops: [{ name: "熔岩礦石", chance: 1.0 }, { name: "學徒短杖", chance: 1.0 }] },
+        frontMobs: [
             { id: "magma_golem", name: "岩漿巨石人", race: "advanced_monster", hp: 2200, atk: 140, def: 90, spd: 10, exp: 150, gold: 90, type: "melee", drops: [{ name: "熔岩礦石", chance: 1.0 }, { name: "鐵甲", chance: 1.0 }] }
+        ],
+        backMobs: [
+            { id: "fire_elemental", name: "熔岩火靈", race: "advanced_monster", hp: 1200, atk: 160, def: 40, spd: 18, exp: 120, gold: 70, type: "ranged", drops: [{ name: "熔岩礦石", chance: 1.0 }, { name: "學徒短杖", chance: 1.0 }] }
         ],
         boss: { id: "flame_dragon", name: "滅世赤龍 [Boss]", race: "advanced_monster", hp: 12000, atk: 380, def: 120, spd: 25, exp: 2000, gold: 1200, type: "melee", drops: [{ name: "鐵甲", chance: 1.0 }, { name: "青銅戒指", chance: 1.0 }] }
     }
@@ -91,7 +96,7 @@ const ENEMIES_DATABASE = [
 ];
 
 // ==========================================
-// 6. 職業、技能與轉職條件資料庫 (新增解鎖消耗參數)
+// 6. 職業、技能與轉職條件資料庫
 // ==========================================
 const SKILLS = {
     tackle: { id: "tackle", name: "撞擊", type: "attack", cd: 2, power: 1.2, desc: "造成 120% 基礎傷害" },
@@ -126,7 +131,7 @@ const JOBS = {
     },
     warrior: {
         id: "warrior", name: "1階 戰士", tier: 1, req: { str: 15 },
-        cost: { gold: 50 }, // 首次解鎖費用 50 金幣
+        cost: { gold: 50 },
         desc: "近戰物理核心，精通重型防具與正面迎敵。",
         allowedEquip: ["sword", "axe", "heavy_armor", "shield", "ring"],
         modifiers: { str: 8, con: 6, atk: 15 },
@@ -134,7 +139,7 @@ const JOBS = {
     },
     archer: {
         id: "archer", name: "1階 弓箭手", tier: 1, req: { dex: 15 },
-        cost: { gold: 50 }, // 首次解鎖費用 50 金幣
+        cost: { gold: 50 },
         desc: "敏捷遠程打手，精通弱點打擊與高暴擊爆發。",
         allowedEquip: ["bow", "light_armor", "ring"],
         modifiers: { dex: 8, agi: 6, atk: 12 },
@@ -142,7 +147,7 @@ const JOBS = {
     },
     apprentice: {
         id: "apprentice", name: "1階 魔法學徒", tier: 1, req: { mnd: 15 },
-        cost: { gold: 50 }, // 首次解鎖費用 50 金幣
+        cost: { gold: 50 },
         desc: "掌控元素魔法，具備強大的遠程範圍傷害。",
         allowedEquip: ["staff", "robe", "ring"],
         modifiers: { mnd: 10, matk: 20 },
