@@ -5,8 +5,8 @@ let gameState = {
     maxTierUnlocked: 1,
     heroes: [],
     inventory: [
-        { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, count: 10, desc: "恢復 80 點生命值" },
-        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, count: 1, desc: "基礎戰士長劍" }
+        { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, sell: 10, count: 10, desc: "恢復 80 點生命值" },
+        { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, sell: 40, count: 1, desc: "基礎戰士長劍" }
     ],
     bestiary: {},
     activeDungeonId: "goblin_cave",
@@ -48,7 +48,6 @@ function getRandomGrade() {
     return "D";
 }
 
-// 建立帶有種族血統修正的角色
 function createHero(name, gender, row = 'front', gen = 1) {
     let raceKeys = Object.keys(RACES);
     let randomRaceKey = raceKeys[Math.floor(Math.random() * raceKeys.length)];
@@ -69,11 +68,12 @@ function createHero(name, gender, row = 'front', gen = 1) {
         id: "hero_" + Date.now() + "_" + Math.floor(Math.random()*100000),
         name: name,
         gender: gender,
-        race: randomRaceKey, // 新增種族血統
+        race: randomRaceKey,
         row: row,
         generation: gen,
         level: 1, exp: 0, maxExp: 100,
         job: "novice",
+        unlockedJobs: ["novice"], // 預設解鎖無業遊民
         jobLevels: { novice: 1 },
         jobExps: { novice: 0 },
         jobMaxExps: { novice: 50 },
@@ -111,7 +111,6 @@ function initDefaultHeroes() {
     ];
 }
 
-// 結合種族係數計算角色能力值
 function getHeroStats(hero) {
     let s = { ...hero.baseStats };
     let m = hero.jobModifiers || {};
@@ -125,7 +124,6 @@ function getHeroStats(hero) {
         });
     }
 
-    // 套用種族係數修正
     Object.keys(s).forEach(k => {
         if (raceData.mod[k]) {
             s[k] = Math.floor(s[k] * raceData.mod[k]);
@@ -196,7 +194,6 @@ function manualSaveGame() {
     if (saveGame()) alert("遊戲進度已手動儲存！");
 }
 
-// 徹底修正重置按鈕，強制重置背包與狀態
 function resetSaveData() {
     if (confirm("確定要重置所有資料並重新開始嗎？")) {
         localStorage.removeItem('guild_and_dungeon_save');
@@ -204,8 +201,8 @@ function resetSaveData() {
             gold: 500, gems: 20, guildLv: 1, maxTierUnlocked: 1,
             heroes: [],
             inventory: [
-                { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, count: 10, desc: "恢復 80 點生命值" },
-                { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, count: 1, desc: "基礎戰士長劍" }
+                { id: "pot_small", name: "初級回復藥水", type: "potion", category: "potion", heal: 80, cost: 30, sell: 10, count: 10, desc: "恢復 80 點生命值" },
+                { id: "iron_sword", name: "鐵劍", type: "equipment", slot: "weapon", category: "equipment", equipType: "sword", atk: 15, cost: 120, sell: 40, count: 1, desc: "基礎戰士長劍" }
             ],
             bestiary: {}, activeDungeonId: "goblin_cave", waveCount: 0,
             isExploring: false, isPaused: false, bossAvailable: false, inBossFight: false,
@@ -528,7 +525,6 @@ function triggerBossFight() {
     renderAll();
 }
 
-// ⚡ 戰鬥 ATB 主迴圈 (含 100% 掉落測試機率)
 function startBattleLoop() {
     setInterval(() => {
         if (!gameState.isExploring || gameState.isPaused) return;
@@ -610,7 +606,6 @@ function startBattleLoop() {
                 log(`☠️ 擊敗 [${targetEnemy.name}]！獲得 ${targetEnemy.gold} 金幣`);
                 gameState.tempSpoils.gold += targetEnemy.gold;
 
-                // 🌟 暫時調整為 100% 必掉落素材或裝備方便測試
                 if (targetEnemy.drops && targetEnemy.drops.length > 0) {
                     let dropItemName = targetEnemy.drops[0].name;
                     gameState.tempSpoils.items.push(dropItemName);
@@ -749,7 +744,7 @@ function cycleHeroRow(heroId) {
     }
 }
 
-// 修正 1 & 5 & 6：轉職頁面顯示頂部能力、條件判定、分開獨立等級紀錄與熟練進度
+// 修正 2 & 3 & 4：轉職頁面與解鎖費用/無條件切換
 function openJobModal(heroId) {
     currentJobModalHeroId = heroId;
     let h = gameState.heroes.find(x => x.id === heroId);
@@ -779,40 +774,51 @@ function renderJobModalContent() {
     let rightPanel = document.getElementById('job-right-list');
     if (!rightPanel) return;
 
+    if (!h.unlockedJobs) h.unlockedJobs = ["novice"];
+
     rightPanel.innerHTML = "";
     Object.keys(JOBS).forEach(jKey => {
         let j = JOBS[jKey];
         let isCurrent = h.job === j.id;
+        let isUnlocked = h.unlockedJobs.includes(j.id);
+
         let savedJobLv = (h.jobLevels && h.jobLevels[j.id]) ? h.jobLevels[j.id] : 1;
         let savedJobExp = (h.jobExps && h.jobExps[j.id]) ? h.jobExps[j.id] : 0;
         let savedJobMaxExp = (h.jobMaxExps && h.jobMaxExps[j.id]) ? h.jobMaxExps[j.id] : 50;
 
-        // 檢測轉職條件是否滿足
         let canReq = true;
         Object.keys(j.req).forEach(rKey => { if (st[rKey] < j.req[rKey]) canReq = false; });
 
         let btnHtml = '';
         if (isCurrent) {
             btnHtml = `<button class="btn btn-success" style="font-size:11px;" disabled>當前職業</button>`;
+        } else if (isUnlocked) {
+            // 已解鎖過的職業：無條件自由切換
+            btnHtml = `<button class="btn btn-primary" style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">切換 (Lv.${savedJobLv})</button>`;
         } else if (!canReq) {
+            // 未滿足數值條件：明確標示「未滿足條件」
             btnHtml = `<button class="btn btn-danger" style="font-size:11px; opacity:0.6;" disabled>未滿足條件</button>`;
         } else {
-            btnHtml = `<button class="btn btn-primary" style="font-size:11px;" onclick="changeHeroJob('${h.id}', '${j.id}')">切換 (Lv.${savedJobLv})</button>`;
+            // 滿足條件但尚未獲得：需要扣除費用解鎖
+            let costGold = (j.cost && j.cost.gold) ? j.cost.gold : 50;
+            btnHtml = `<button class="btn btn-warning" style="font-size:11px;" onclick="unlockHeroJob('${h.id}', '${j.id}')">解鎖職業 (🪙 ${costGold}金幣)</button>`;
         }
 
         rightPanel.innerHTML += `
             <div style="background:#161720; padding:10px; border-radius:6px; border:1px solid var(--panel-border);" onclick="selectJobView('${j.id}')">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <div>
-                        <strong>${j.name}</strong> <span style="font-size:11px; color:var(--accent);">(已達 職 Lv.${savedJobLv})</span>
+                        <strong>${j.name}</strong> ${isUnlocked ? `<span style="font-size:11px; color:var(--accent);">(已達 職 Lv.${savedJobLv})</span>` : '<span style="font-size:11px; color:#888;">(未獲得)</span>'}
                         <div style="font-size:11px; color:#aaa;">前置要求: ${JSON.stringify(j.req)}</div>
                     </div>
                     ${btnHtml}
                 </div>
-                <div style="margin-top:6px; font-size:10px;">
-                    <div>熟練進度: ${savedJobExp} / ${savedJobMaxExp} EXP</div>
-                    <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, (savedJobExp/savedJobMaxExp)*100)}%; background:#9b59b6;"></div></div>
-                </div>
+                ${isUnlocked ? `
+                    <div style="margin-top:6px; font-size:10px;">
+                        <div>熟練進度: ${savedJobExp} / ${savedJobMaxExp} EXP</div>
+                        <div class="bar-container"><div class="hp-bar" style="width:${Math.min(100, (savedJobExp/savedJobMaxExp)*100)}%; background:#9b59b6;"></div></div>
+                    </div>
+                ` : ''}
             </div>
         `;
     });
@@ -842,28 +848,43 @@ function selectJobView(jobId) {
     `;
 }
 
+// 解鎖全新職業並扣除費用
+function unlockHeroJob(heroId, jobId) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    let j = JOBS[jobId];
+    if (!h || !j) return;
+
+    let costGold = (j.cost && j.cost.gold) ? j.cost.gold : 50;
+    if (gameState.gold >= costGold) {
+        gameState.gold -= costGold;
+        if (!h.unlockedJobs) h.unlockedJobs = ["novice"];
+        h.unlockedJobs.push(jobId);
+
+        if (!h.jobLevels) h.jobLevels = {};
+        if (!h.jobLevels[jobId]) h.jobLevels[jobId] = 1;
+
+        h.job = jobId;
+        h.jobModifiers = j.modifiers || {};
+        checkSkillUnlocks(h);
+        log(`🎉 花費 ${costGold} 金幣成功為 ${h.name} 解鎖新職業【${j.name}】！`);
+        openJobModal(heroId);
+        renderAll();
+        saveGame();
+    } else {
+        alert(`金幣不足！解鎖【${j.name}】需要 ${costGold} 金幣。`);
+    }
+}
+
+// 無條件切換已解鎖職業
 function changeHeroJob(heroId, jobId) {
     let h = gameState.heroes.find(x => x.id === heroId);
     if (h && typeof JOBS !== 'undefined') {
         let j = JOBS[jobId];
-        let st = getHeroStats(h);
-        
-        let canReq = true;
-        Object.keys(j.req).forEach(rKey => { if (st[rKey] < j.req[rKey]) canReq = false; });
-
-        if (!canReq) {
-            alert("屬性數值未達標，無法轉職為該職業！");
-            return;
-        }
-
         h.job = jobId;
-        if (!h.jobLevels) h.jobLevels = {};
-        if (!h.jobLevels[jobId]) h.jobLevels[jobId] = 1;
-
         h.jobModifiers = j.modifiers || {};
         checkSkillUnlocks(h);
-        log(`✨ ${h.name} 切換職業為 ${j.name} (職 Lv.${h.jobLevels[jobId]})！`);
-        openJobModal(heroId); // 即時刷新頂部能力值與按鈕狀態
+        log(`✨ ${h.name} 切換職業為 ${j.name} (職 Lv.${h.jobLevels[jobId] || 1})！`);
+        openJobModal(heroId);
         renderAll();
         saveGame();
     }
@@ -872,11 +893,76 @@ function changeHeroJob(heroId, jobId) {
 function closeJobModal() {
     currentJobModalHeroId = null;
     let modal = document.getElementById('job-modal');
-    if (modal) modal.style.display = 'flex'; // 修正語法
     if (modal) modal.style.display = 'none';
 }
 
-// 修正 7：技能裝備與卸下
+// 修正 1：完美修復武器、防具與飾品的替換選單
+function selectEquipForHero(heroId, slot) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (!h) return;
+
+    let jobData = JOBS[h.job];
+    let availableEquips = gameState.inventory.filter(i => {
+        if (i.type !== 'equipment' || i.slot !== slot || i.count <= 0) return false;
+        if (!jobData || !jobData.allowedEquip) return true;
+        if (jobData.allowedEquip.includes("all")) return true;
+        return jobData.allowedEquip.includes(i.equipType);
+    });
+
+    let slotName = slot === 'weapon' ? '武器' : (slot === 'armor' ? '防具' : '飾品');
+
+    if (availableEquips.length === 0) {
+        let choice = confirm(`背包中目前沒有【${jobData ? jobData.name : ''}】可裝備的【${slotName}】！\n是否要卸下當前穿戴的 ${slotName}？`);
+        if (choice) equipItem(heroId, slot, null);
+        return;
+    }
+
+    let equipNames = availableEquips.map((e, idx) => `${idx + 1}. ${e.name} (${e.desc || ''})`).join('\n');
+    let input = prompt(`請輸入數字選擇要裝備的【${slotName}】 (輸入 0 卸下當前裝備):\n${equipNames}`);
+    
+    if (input === "0") {
+        equipItem(heroId, slot, null);
+    } else if (input && parseInt(input) > 0 && parseInt(input) <= availableEquips.length) {
+        let chosenItem = availableEquips[parseInt(input) - 1];
+        equipItem(heroId, slot, chosenItem);
+    }
+}
+
+function equipItem(heroId, slot, itemObj) {
+    let h = gameState.heroes.find(x => x.id === heroId);
+    if (!h) return;
+
+    if (!h.equippedItems) h.equippedItems = { weapon: null, armor: null, accessory: null };
+    
+    // 卸下舊裝備並歸還背包
+    if (h.equippedItems[slot]) {
+        let oldItem = h.equippedItems[slot];
+        let invOld = gameState.inventory.find(i => i.name === oldItem.name);
+        if (invOld) invOld.count++;
+        else gameState.inventory.push({ ...oldItem, count: 1 });
+        log(`🛡️ [${h.name}] 卸下了【${oldItem.name}】`);
+    }
+
+    // 穿上新裝備並扣除背包數量
+    if (itemObj) {
+        h.equippedItems[slot] = { ...itemObj };
+        let invNew = gameState.inventory.find(i => i.id === itemObj.id || i.name === itemObj.name);
+        if (invNew) {
+            invNew.count--;
+            if (invNew.count <= 0) {
+                gameState.inventory = gameState.inventory.filter(i => i !== invNew);
+            }
+        }
+        log(`⚔️ [${h.name}] 裝備了【${itemObj.name}】！`);
+    } else {
+        h.equippedItems[slot] = null;
+    }
+
+    openHeroModal(heroId, true);
+    renderAll();
+    saveGame();
+}
+
 function openHeroModal(heroId, isRefresh = false) {
     currentModalHeroId = heroId;
     let h = gameState.heroes.find(x => x.id === heroId);
@@ -896,6 +982,24 @@ function openHeroModal(heroId, isRefresh = false) {
         let reviveBtn = h.isDead ? `<button class="btn btn-danger" onclick="reviveHero('${h.id}')">⛑️ 醫治復活 (${h.level * 100}金幣)</button>` : '';
         let rowLabel = h.row === 'front' ? '🛡️ 前衛' : (h.row === 'back' ? '🏹 後衛' : '💤 未上陣');
 
+        let eq = h.equippedItems || { weapon: null, armor: null, accessory: null };
+        let equipSlotsHtml = `
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin:10px 0;">
+                <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
+                    <strong>武器:</strong> ${eq.weapon ? eq.weapon.name : '無'}<br>
+                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'weapon')">替換</button>
+                </div>
+                <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
+                    <strong>防具:</strong> ${eq.armor ? eq.armor.name : '無'}<br>
+                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'armor')">替換</button>
+                </div>
+                <div style="background:#161720; padding:6px; border-radius:4px; font-size:11px;">
+                    <strong>飾品:</strong> ${eq.accessory ? eq.accessory.name : '無'}<br>
+                    <button class="btn btn-primary" style="font-size:10px; padding:2px 5px; margin-top:4px;" onclick="selectEquipForHero('${h.id}', 'accessory')">替換</button>
+                </div>
+            </div>
+        `;
+
         body.innerHTML = `
             <h3>${h.name} (Lv.${h.level}) [${raceName}] ${h.gender === 'female' ? '女 ♀' : '男 ♂'}</h3>
             <p style="font-size:12px; color:#aaa;">性格: ${traitsHtml}</p>
@@ -913,6 +1017,9 @@ function openHeroModal(heroId, isRefresh = false) {
                 <span style="font-size:13px;">當前位置: <strong>${rowLabel}</strong></span>
                 <button class="btn btn-warning" style="font-size:11px;" onclick="cycleHeroRow('${h.id}')">切換位置</button>
             </div>
+
+            <h4 style="margin:10px 0 5px 0;">🛡️ 穿戴裝備</h4>
+            ${equipSlotsHtml}
 
             <h4 style="margin:10px 0 5px 0;">📊 六維數值與天生資質評分</h4>
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:12px; background:#161720; padding:10px; border-radius:6px;">
@@ -965,7 +1072,7 @@ function toggleSkill(heroId, skId) {
         if (h.equippedSkills.length < 3) h.equippedSkills.push(skId);
         else alert("最多只能裝配 3 個技能！");
     }
-    openHeroModal(heroId, true); // 強制刷新 modal 畫面
+    openHeroModal(heroId, true);
     saveGame();
 }
 
