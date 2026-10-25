@@ -42,6 +42,9 @@ const ITEMS_DATABASE = [
     { id: "mat_lava_ore", name: "熔岩礦石", type: "material", category: "material", rarity: "SR", cost: 100, sell: 33, desc: "帶有高溫熱力的赤紅礦石" }
 ];
 
+// 裝備範本，方便隨機掉落
+const EQUIPMENT_TEMPLATES = ITEMS_DATABASE.filter(i => i.type === "equipment");
+
 // ==========================================
 // 4. 探索區域與怪物掉落資料庫
 // ==========================================
@@ -88,7 +91,7 @@ const ENEMIES_DATABASE = [
 ];
 
 // ==========================================
-// 6. 職業、技能與轉職條件資料庫
+// 6. 職業、技能與轉職條件資料庫 (新增解鎖消耗參數)
 // ==========================================
 const SKILLS = {
     tackle: { id: "tackle", name: "撞擊", type: "attack", cd: 2, power: 1.2, desc: "造成 120% 基礎傷害" },
@@ -115,6 +118,7 @@ const SKILLS = {
 const JOBS = {
     novice: {
         id: "novice", name: "0階 無業遊民", tier: 0, req: {},
+        cost: { gold: 0 },
         desc: "尚未決定職業方向的冒險者，能適應各種裝備。",
         allowedEquip: ["all"],
         modifiers: { str: 0, con: 0, mnd: 0, dex: 0, agi: 0, luk: 0 },
@@ -122,6 +126,7 @@ const JOBS = {
     },
     warrior: {
         id: "warrior", name: "1階 戰士", tier: 1, req: { str: 15 },
+        cost: { gold: 50 }, // 首次解鎖費用 50 金幣
         desc: "近戰物理核心，精通重型防具與正面迎敵。",
         allowedEquip: ["sword", "axe", "heavy_armor", "shield", "ring"],
         modifiers: { str: 8, con: 6, atk: 15 },
@@ -129,6 +134,7 @@ const JOBS = {
     },
     archer: {
         id: "archer", name: "1階 弓箭手", tier: 1, req: { dex: 15 },
+        cost: { gold: 50 }, // 首次解鎖費用 50 金幣
         desc: "敏捷遠程打手，精通弱點打擊與高暴擊爆發。",
         allowedEquip: ["bow", "light_armor", "ring"],
         modifiers: { dex: 8, agi: 6, atk: 12 },
@@ -136,6 +142,7 @@ const JOBS = {
     },
     apprentice: {
         id: "apprentice", name: "1階 魔法學徒", tier: 1, req: { mnd: 15 },
+        cost: { gold: 50 }, // 首次解鎖費用 50 金幣
         desc: "掌控元素魔法，具備強大的遠程範圍傷害。",
         allowedEquip: ["staff", "robe", "ring"],
         modifiers: { mnd: 10, matk: 20 },
@@ -157,7 +164,7 @@ const SHOP_ITEMS_BY_TIER = {
     ],
     3: [
         ITEMS_DATABASE.find(i => i.id === "pot_large"),
-        ITEMS_DATABASE.find(i => i.id === "bronze_index") || ITEMS_DATABASE.find(i => i.id === "bronze_ring")
+        ITEMS_DATABASE.find(i => i.id === "bronze_ring")
     ]
 };
 
